@@ -1,10 +1,14 @@
 {
   "imports": {
-    "hono": "jsr:@hono/hono@4.5.0"
+    "hono": "jsr:@hono/hono@4.5.0",
+    "lindera-wasm": "npm:lindera-wasm@^2.1.0",
+    "@nlpjs/lang-ja": "npm:@nlpjs/lang-ja@^5.0.0-alpha.5",
+    "lindera-wasm-nodejs-ipadic": "npm:lindera-wasm-nodejs-ipadic@^2.0.0"
   },
   "tasks": {
     "debug": "deno run --inspect-brk --allow-sys --allow-net --allow-env --allow-read --allow-write --allow-ffi --watch --env-file=.env.local --env-file=.env src/main.ts",
     "dev": "deno run --allow-sys --allow-net --allow-env --allow-read --allow-write --allow-ffi --watch --env-file=.env.local --env-file=.env src/main.ts",
+    "eval:chunks": "deno run --allow-read src/utils/evaluateChunks.ts",
     "start": "deno run --allow-sys --allow-net --allow-env --allow-read --allow-write --allow-ffi --env-file=.env.local --env-file=.env src/main.ts",
     "test": "deno test"
   }
