@@ -1,16 +1,75 @@
 {
   "version": "5",
   "specifiers": {
-    "jsr:@hono/hono@4.5.0": "4.5.0"
+    "jsr:@hono/hono@4.5.0": "4.5.0",
+    "npm:@nlpjs/lang-ja@*": "5.0.0-alpha.5",
+    "npm:@nlpjs/lang-ja@^5.0.0-alpha.5": "5.0.0-alpha.5",
+    "npm:lindera-wasm-nodejs-ipadic@*": "2.0.0",
+    "npm:lindera-wasm-nodejs-ipadic@2": "2.0.0",
+    "npm:lindera-wasm@*": "2.1.0",
+    "npm:lindera-wasm@^2.1.0": "2.1.0"
   },
   "jsr": {
     "@hono/hono@4.5.0": {
       "integrity": "4a410f7773ac4b5b0eb4520b26c7ab7795a271d57a9df7fa1953ded6b90ccaf7"
     }
   },
+  "npm": {
+    "@nlpjs/core@5.0.0-alpha.5": {
+      "integrity": "sha512-6KER6Jsy/KLVNor2isRsYV5XjVtYVaYLLqEmQt69Nmw2tIYyzzhzPxZPmOaU++OWfiUaZWGMgNueJHAmK6sApw==",
+      "tarball": "https://registry.npmmirror.com/@nlpjs/core/-/core-5.0.0-alpha.5.tgz"
+    },
+    "@nlpjs/lang-ja@5.0.0-alpha.5": {
+      "integrity": "sha512-baDypycPy8oFeu9v6AVv4lCPjh3Kmk917y5E4NXC8VzVvtH58OWOq2Z0jG99NNTPTu1V9om+dRynyC1uV4cvFg==",
+      "dependencies": [
+        "@nlpjs/core",
+        "kuromoji"
+      ],
+      "tarball": "https://registry.npmmirror.com/@nlpjs/lang-ja/-/lang-ja-5.0.0-alpha.5.tgz"
+    },
+    "async@2.6.4": {
+      "integrity": "sha512-mzo5dfJYwAn29PeiJ0zvwTo04zj8HDJj0Mn8TD7sno7q12prdbnasKJHhkm2c1LgrhlJ0teaea8860oxi51mGA==",
+      "dependencies": [
+        "lodash"
+      ],
+      "tarball": "https://registry.npmmirror.com/async/-/async-2.6.4.tgz"
+    },
+    "doublearray@0.0.2": {
+      "integrity": "sha512-aw55FtZzT6AmiamEj2kvmR6BuFqvYgKZUkfQ7teqVRNqD5UE0rw8IeW/3gieHNKQ5sPuDKlljWEn4bzv5+1bHw==",
+      "tarball": "https://registry.npmmirror.com/doublearray/-/doublearray-0.0.2.tgz"
+    },
+    "kuromoji@0.1.2": {
+      "integrity": "sha512-V0dUf+C2LpcPEXhoHLMAop/bOht16Dyr+mDiIE39yX3vqau7p80De/koFqpiTcL1zzdZlc3xuHZ8u5gjYRfFaQ==",
+      "dependencies": [
+        "async",
+        "doublearray",
+        "zlibjs"
+      ],
+      "tarball": "https://registry.npmmirror.com/kuromoji/-/kuromoji-0.1.2.tgz"
+    },
+    "lindera-wasm-nodejs-ipadic@2.0.0": {
+      "integrity": "sha512-ocuJn9MUA7v5wuXRSADgzLu2Hn2//GmAYHARXSkTbMOCk3bv4Rh1L39XjjJ05286HL0YWfpPo67XrxLMJ/zIhQ==",
+      "tarball": "https://registry.npmmirror.com/lindera-wasm-nodejs-ipadic/-/lindera-wasm-nodejs-ipadic-2.0.0.tgz"
+    },
+    "lindera-wasm@2.1.0": {
+      "integrity": "sha512-YyxhS38PVkneDEC46+6Ku0EFayJ9nPY59PYxLOcfOp9wlnk7WxRo+N7VZiJYkh9WSwKj9qziDWfGriIeEFrmMQ==",
+      "tarball": "https://registry.npmmirror.com/lindera-wasm/-/lindera-wasm-2.1.0.tgz"
+    },
+    "lodash@4.18.1": {
+      "integrity": "sha512-dMInicTPVE8d1e5otfwmmjlxkZoUpiVLwyeTdUsi/Caj/gfzzblBcCE5sRHV/AsjuCmxWrte2TNGSYuCeCq+0Q==",
+      "tarball": "https://registry.npmmirror.com/lodash/-/lodash-4.18.1.tgz"
+    },
+    "zlibjs@0.3.1": {
+      "integrity": "sha512-+J9RrgTKOmlxFSDHo0pI1xM6BLVUv+o0ZT9ANtCxGkjIVCCUdx9alUF8Gm+dGLKbkkkidWIHFDZHDMpfITt4+w==",
+      "tarball": "https://registry.npmmirror.com/zlibjs/-/zlibjs-0.3.1.tgz"
+    }
+  },
   "workspace": {
     "dependencies": [
-      "jsr:@hono/hono@4.5.0"
+      "jsr:@hono/hono@4.5.0",
+      "npm:@nlpjs/lang-ja@^5.0.0-alpha.5",
+      "npm:lindera-wasm-nodejs-ipadic@2",
+      "npm:lindera-wasm@^2.1.0"
     ]
   }
 }

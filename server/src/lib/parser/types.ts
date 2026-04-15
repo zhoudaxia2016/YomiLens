@@ -15,9 +15,15 @@ export const POS_VALUES = [
   "記号",
 ] as const;
 
-export type Pos = (typeof POS_VALUES)[number];
+export type Pos = typeof POS_VALUES[number];
 
-export type ConjugationType = "五段" | "一段" | "カ変" | "サ変" | "形容詞" | "形容動詞";
+export type ConjugationType =
+  | "五段"
+  | "一段"
+  | "カ変"
+  | "サ変"
+  | "形容詞"
+  | "形容動詞";
 
 export type ConjugationForm =
   | "未然形A"
@@ -94,12 +100,45 @@ export type ParsedArticle = {
   paragraphs: Paragraph[];
 };
 
-export type ParseArticleResponse = {
-  article: ParsedArticle;
-  rawModelOutput: string;
+export type LinderaToken = {
+  surface: string;
+  baseForm: string;
+  reading: string;
+  partOfSpeech: string;
+  partOfSpeechSubcategory1: string;
+  partOfSpeechSubcategory2: string;
+  partOfSpeechSubcategory3: string;
+  conjugationType: string;
+  conjugationForm: string;
+  byteStart: number;
+  byteEnd: number;
 };
 
-export type ParseArticleError = {
-  error: string;
-  rawModelOutput?: string;
+export type NodeLabel = "token" | "noun_phrase" | "modifier" | "predicate" | "other";
+
+export type Node = {
+  label: NodeLabel;
+  tokens: Token[];
+};
+
+type MatchValue<T extends string> = T | T[];
+
+export type PatternPart = {
+  label?: MatchValue<NodeLabel>;
+  pos?: MatchValue<Pos>;
+  pos1?: MatchValue<string>;
+  pos2?: MatchValue<string>;
+  surface?: MatchValue<string>;
+  lemma?: MatchValue<string>;
+  category?: "nominal" | "predicate" | "modifier" | "particleLike" | "punctuation";
+  singleTokenOnly?: boolean;
+  custom?: (node: Node) => boolean;
+};
+
+export type SequenceRule = {
+  name: string;
+  priority: number;
+  pattern: PatternPart[];
+  resultLabel: NodeLabel;
+  resultLabelResolver?: (nodes: Node[], index: number, length: number) => NodeLabel;
 };
