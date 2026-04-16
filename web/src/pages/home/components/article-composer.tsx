@@ -20,10 +20,7 @@ export function ArticleComposer({
   return (
     <Card className="composer-card">
       <CardHeader className="composer-head">
-        <div>
-          <p className="section-kicker">Input</p>
-          <CardTitle>请求本地 parse 接口</CardTitle>
-        </div>
+        <CardTitle>输入日语文章</CardTitle>
         <Button type="submit" form="article-composer-form" disabled={loading}>
           {loading ? '解析中…' : '重新解析'}
         </Button>
