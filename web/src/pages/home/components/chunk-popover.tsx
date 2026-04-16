@@ -1,6 +1,6 @@
 import { Badge } from '@/components/ui/badge'
 import type { Chunk, Sentence, Token } from '@/types'
-import { buildTokenKey } from '../utils'
+import { buildTokenKey, isPunctuationToken } from '../utils'
 
 type ChunkPopoverProps = {
   chunk: Chunk
@@ -17,26 +17,31 @@ export function ChunkPopover({
   activeTokenIndex,
   onSelectToken,
 }: ChunkPopoverProps) {
-  return (
-    <div className="chunk-popover">
-      <p className="section-kicker">Chunk</p>
-      <div className="chunk-tabs">
-        {chunk.tokenIndices.map((tokenIndex) => {
-          const candidate = sentence.tokens[tokenIndex]
-          const active = activeTokenIndex === tokenIndex
+  const nonPunctuationTokens = chunk.tokenIndices.filter(
+    (tokenIndex) => !isPunctuationToken(sentence.tokens[tokenIndex].surface)
+  )
 
-          return (
-            <button
-              className={active ? 'chunk-tab chunk-tab-active' : 'chunk-tab'}
-              key={`${buildTokenKey(candidate)}-tab`}
-              type="button"
-              onClick={() => onSelectToken(tokenIndex)}
-            >
-              {candidate.surface}
-            </button>
-          )
-        })}
-      </div>
+  return (
+    <div>
+      {nonPunctuationTokens.length > 1 ? (
+        <div className="chunk-tabs">
+          {nonPunctuationTokens.map((tokenIndex) => {
+            const candidate = sentence.tokens[tokenIndex]
+            const active = activeTokenIndex === tokenIndex
+
+            return (
+              <button
+                className={active ? 'chunk-tab chunk-tab-active' : 'chunk-tab'}
+                key={`${buildTokenKey(candidate)}-tab`}
+                type="button"
+                onClick={() => onSelectToken(tokenIndex)}
+              >
+                {candidate.surface}
+              </button>
+            )
+          })}
+        </div>
+      ) : null}
 
       <div className="chunk-detail">
         <div className="chunk-detail-head">
@@ -46,21 +51,12 @@ export function ChunkPopover({
           </Badge>
         </div>
         <p className="detail-reading">
-          {token.reading}
-          {token.furigana ? ` / ${token.furigana}` : ''}
+          {token.furigana || token.reading}
         </p>
         <dl className="detail-grid detail-grid-compact">
           <div>
             <dt>原形</dt>
             <dd>{token.lemma}</dd>
-          </div>
-          <div>
-            <dt>词性</dt>
-            <dd>{token.pos}</dd>
-          </div>
-          <div>
-            <dt>语块</dt>
-            <dd>{chunk.text}</dd>
           </div>
           <div>
             <dt>语块角色</dt>

@@ -1,3 +1,4 @@
+import { useRef } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import type { ParsedArticle } from '@/types'
@@ -18,6 +19,8 @@ type ArticleViewerProps = {
 }
 
 export function ArticleViewer({ article, selection, onSelectChunk }: ArticleViewerProps) {
+  const isInternalUpdate = useRef(false)
+
   const selectedContext =
     article && selection
       ? (() => {
@@ -39,11 +42,7 @@ export function ArticleViewer({ article, selection, onSelectChunk }: ArticleView
   return (
     <Card className="article-card">
       <CardHeader className="article-card-head">
-        <div>
-          <p className="section-kicker">Result</p>
-          <CardTitle>{article?.title ?? '本地解析结果'}</CardTitle>
-        </div>
-        <p className="article-status">默认展示语块；点语块看 token 详情</p>
+        <CardTitle>解析结果</CardTitle>
       </CardHeader>
       <CardContent>
         <div className="article-flow">
@@ -63,17 +62,22 @@ export function ArticleViewer({ article, selection, onSelectChunk }: ArticleView
                           key={`${sentence.originalText}-${chunkIndex}`}
                           open={isSelected}
                           onOpenChange={(open) => {
+                            if (isInternalUpdate.current) {
+                              return
+                            }
+
                             if (open) {
+                              isInternalUpdate.current = true
                               onSelectChunk({
                                 paragraphIndex,
                                 sentenceIndex,
                                 chunkIndex,
                                 activeTokenIndex: chunk.tokenIndices[0],
                               })
-                              return
-                            }
-
-                            if (isSelected) {
+                              requestAnimationFrame(() => {
+                                isInternalUpdate.current = false
+                              })
+                            } else if (isSelected) {
                               onSelectChunk(null)
                             }
                           }}
@@ -112,7 +116,7 @@ export function ArticleViewer({ article, selection, onSelectChunk }: ArticleView
                               </button>
                             </PopoverTrigger>
 
-                            {isSelected && selectedContext?.chunk.index === chunk.index ? (
+                            {isSelected && selectedContext ? (
                               <PopoverContent className="chunk-popover" align="start" side="bottom" sideOffset={10}>
                                 <ChunkPopover
                                   chunk={chunk}
