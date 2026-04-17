@@ -1,6 +1,7 @@
 {
   "imports": {
     "hono": "jsr:@hono/hono@4.5.0",
+    "@libsql/client": "npm:@libsql/client@^0.15.15",
     "lindera-wasm": "npm:lindera-wasm@^2.1.0",
     "@nlpjs/lang-ja": "npm:@nlpjs/lang-ja@^5.0.0-alpha.5",
     "lindera-wasm-nodejs-ipadic": "npm:lindera-wasm-nodejs-ipadic@^2.0.0"

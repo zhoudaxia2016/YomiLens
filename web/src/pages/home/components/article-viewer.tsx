@@ -2,7 +2,7 @@ import { useRef } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Button } from '@/components/ui/button'
-import type { ParsedArticle, TranslateParagraphOutput } from '@/types'
+import type { ArticleRecord, ParsedArticle, TranslateParagraphOutput } from '@/types'
 import { ChunkPopover } from './chunk-popover'
 import { TokenSurface } from './token-surface'
 import {
@@ -14,6 +14,7 @@ import {
 } from '../utils'
 
 type ArticleViewerProps = {
+  currentArticle: ArticleRecord | null
   article: ParsedArticle | null
   selection: SelectionState
   translations: Map<number, TranslateParagraphOutput>
@@ -23,6 +24,7 @@ type ArticleViewerProps = {
 }
 
 export function ArticleViewer({ 
+  currentArticle,
   article, 
   selection, 
   translations, 
@@ -31,6 +33,11 @@ export function ArticleViewer({
   onTranslate 
 }: ArticleViewerProps) {
   const isInternalUpdate = useRef(false)
+  const statusLabel = currentArticle
+    ? currentArticle.status === 'parsed'
+      ? '已解析'
+      : '待解析'
+    : null
 
   const selectedContext =
     article && selection
@@ -53,12 +60,20 @@ export function ArticleViewer({
   return (
     <Card className="article-card">
       <CardHeader className="article-card-head">
-        <CardTitle>解析结果</CardTitle>
+        <div>
+          <CardTitle>解析结果</CardTitle>
+          <p className="muted">
+            {currentArticle
+              ? `${statusLabel} · ${currentArticle.paragraphCount} 段 / ${currentArticle.sentenceCount} 句`
+              : ''}
+          </p>
+        </div>
         <Button onClick={onTranslate} disabled={translating || !article}>
           {translating ? '翻译中…' : '翻译'}
         </Button>
       </CardHeader>
       <CardContent>
+        {!article ? <div className="empty-state">还没有解析结果。先保存文章，再执行解析。</div> : null}
         <div className="article-flow">
           {article?.paragraphs.map((paragraph, paragraphIndex) => {
             const translation = translations.get(paragraphIndex)
