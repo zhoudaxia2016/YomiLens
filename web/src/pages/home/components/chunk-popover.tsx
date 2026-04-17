@@ -7,6 +7,7 @@ type ChunkPopoverProps = {
   sentence: Sentence
   token: Token
   activeTokenIndex: number
+  tokenMeanings?: Array<{ index: number; meaning: string }>
   onSelectToken: (tokenIndex: number) => void
 }
 
@@ -15,11 +16,14 @@ export function ChunkPopover({
   sentence,
   token,
   activeTokenIndex,
+  tokenMeanings,
   onSelectToken,
 }: ChunkPopoverProps) {
   const nonPunctuationTokens = chunk.tokenIndices.filter(
     (tokenIndex) => !isPunctuationToken(sentence.tokens[tokenIndex].surface)
   )
+
+  const currentTokenMeaning = tokenMeanings?.find((m) => m.index === token.index)?.meaning
 
   return (
     <div>
@@ -53,6 +57,9 @@ export function ChunkPopover({
         <p className="detail-reading">
           {token.furigana || token.reading}
         </p>
+        {currentTokenMeaning ? (
+          <p className="detail-meaning">{currentTokenMeaning}</p>
+        ) : null}
         <dl className="detail-grid detail-grid-compact">
           <div>
             <dt>原形</dt>

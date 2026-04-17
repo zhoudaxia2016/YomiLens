@@ -3,6 +3,7 @@ import { corsAllowedFrontends } from './middleware/cors.ts'
 import { rateLimit } from './middleware/rateLimit.ts'
 import { safeMutatingRequests } from './middleware/safeMutating.ts'
 import { articlesRouter } from './routes/articles.ts'
+import { translateRouter } from './routes/translate.ts'
 
 const app = new Hono()
 const api = new Hono()
@@ -19,6 +20,7 @@ app.get('/', (c) =>
 api.use('*', corsAllowedFrontends)
 api.use('*', safeMutatingRequests)
 api.route('/articles', articlesRouter)
+api.route('/translate', translateRouter)
 app.route('/api', api)
 
 const port = 8000
