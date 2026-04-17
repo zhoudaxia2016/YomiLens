@@ -1,12 +1,91 @@
 import type {
+  ArticleDetail,
+  ListArticlesResponse,
   ParseArticleError,
   ParseArticleResponse,
+  UpsertArticleInput,
   TranslateParagraphInput,
   TranslateParagraphOutput,
   TranslateParagraphError,
 } from '../types'
 
 export const api = {
+  async listArticles() {
+    const res = await fetch('/api/articles')
+    const json = (await res.json()) as ListArticlesResponse | { error: string }
+    if (!res.ok) {
+      throw new Error('error' in json ? json.error : `HTTP ${res.status}`)
+    }
+    return json as ListArticlesResponse
+  },
+
+  async getArticle(id: string) {
+    const res = await fetch(`/api/articles/${id}`)
+    const json = (await res.json()) as ArticleDetail | { error: string }
+    if (!res.ok) {
+      throw new Error('error' in json ? json.error : `HTTP ${res.status}`)
+    }
+    return json as ArticleDetail
+  },
+
+  async createArticle(input: UpsertArticleInput) {
+    const res = await fetch('/api/articles', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(input),
+    })
+    const json = (await res.json()) as ArticleDetail | { error: string }
+    if (!res.ok) {
+      throw new Error('error' in json ? json.error : `HTTP ${res.status}`)
+    }
+    return json as ArticleDetail
+  },
+
+  async updateArticle(id: string, input: UpsertArticleInput) {
+    const res = await fetch(`/api/articles/${id}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(input),
+    })
+    const json = (await res.json()) as ArticleDetail | { error: string }
+    if (!res.ok) {
+      throw new Error('error' in json ? json.error : `HTTP ${res.status}`)
+    }
+    return json as ArticleDetail
+  },
+
+  async parseStoredArticle(id: string) {
+    const controller = new AbortController()
+    const timeout = window.setTimeout(() => controller.abort(), 120_000)
+
+    try {
+      const res = await fetch(`/api/articles/${id}/parse`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: '{}',
+        signal: controller.signal,
+      })
+      const json = (await res.json()) as ArticleDetail | { error: string }
+      if (!res.ok) {
+        throw new Error('error' in json ? json.error : `HTTP ${res.status}`)
+      }
+      return json as ArticleDetail
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        throw new Error('请求超时（120 秒）')
+      }
+      throw error
+    } finally {
+      window.clearTimeout(timeout)
+    }
+  },
+
   async parseArticle(text: string): Promise<ParseArticleResponse> {
     const controller = new AbortController()
     const timeout = window.setTimeout(() => controller.abort(), 30_000)

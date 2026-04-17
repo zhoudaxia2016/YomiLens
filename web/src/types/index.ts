@@ -104,6 +104,60 @@ export type ParseArticleError = {
   rawModelOutput?: string;
 };
 
+export type ArticleStatus = 'draft' | 'parsed'
+
+export type ArticleRecord = {
+  id: string
+  title: string
+  sourceText: string
+  tags: string[]
+  sourceLocale: 'ja-JP'
+  status: ArticleStatus
+  latestParseId: string | null
+  latestParseVersion: string | null
+  paragraphCount: number
+  sentenceCount: number
+  tokenCount: number
+  chunkCount: number
+  createdAt: string
+  updatedAt: string
+  lastParsedAt: string | null
+}
+
+export type ArticleParseRecord = {
+  id: string
+  articleId: string
+  parserVersion: string
+  sourceTextHash: string
+  article: ParsedArticle
+  rawModelOutput: string
+  paragraphCount: number
+  sentenceCount: number
+  tokenCount: number
+  chunkCount: number
+  createdAt: string
+}
+
+export type ArticleListItem = {
+  id: string
+  title: string
+}
+
+export type ArticleDetail = {
+  article: ArticleRecord
+  latestParse: ArticleParseRecord | null
+}
+
+export type ListArticlesResponse = {
+  articles: ArticleListItem[]
+}
+
+export type UpsertArticleInput = {
+  title: string
+  sourceText: string
+  tags: string[]
+}
+
 export type TranslationMemory = {
   summary: string;
   characters: Array<{ name: string; description: string }>;
