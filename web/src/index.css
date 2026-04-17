@@ -362,6 +362,15 @@ h1 {
   line-height: 1.7;
 }
 
+.paragraph-translation {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px dashed rgba(106, 119, 138, 0.2);
+  color: #3d4654;
+  font-size: 15px;
+  line-height: 1.8;
+}
+
 .detail-subtitle {
   margin: 0 0 10px;
   font-size: 13px;
@@ -372,8 +381,18 @@ h1 {
 }
 
 .detail-reading {
-  margin: 8px 0 14px;
+  margin: 8px 0 6px;
   color: #6d7786;
+}
+
+.detail-meaning {
+  margin: 0 0 14px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #f0f4f8;
+  color: #2d3748;
+  font-size: 14px;
+  line-height: 1.6;
 }
 
 .detail-grid {

@@ -1,4 +1,10 @@
-import type { ParseArticleError, ParseArticleResponse } from '../types'
+import type {
+  ParseArticleError,
+  ParseArticleResponse,
+  TranslateParagraphInput,
+  TranslateParagraphOutput,
+  TranslateParagraphError,
+} from '../types'
 
 export const api = {
   async parseArticle(text: string): Promise<ParseArticleResponse> {
@@ -27,6 +33,39 @@ export const api = {
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
         throw new Error('请求超时（30 秒）')
+      }
+      throw error
+    } finally {
+      window.clearTimeout(timeout)
+    }
+  },
+
+  async translateParagraph(
+    input: TranslateParagraphInput
+  ): Promise<TranslateParagraphOutput> {
+    const controller = new AbortController()
+    const timeout = window.setTimeout(() => controller.abort(), 120_000)
+
+    try {
+      const res = await fetch('/api/translate/paragraph', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(input),
+        signal: controller.signal,
+      })
+
+      const json = (await res.json()) as TranslateParagraphOutput | TranslateParagraphError
+      if (!res.ok) {
+        const message = 'error' in json ? json.error : `HTTP ${res.status}`
+        throw new Error(message)
+      }
+
+      return json as TranslateParagraphOutput
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        throw new Error('请求超时（120 秒）')
       }
       throw error
     } finally {
