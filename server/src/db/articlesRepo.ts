@@ -236,6 +236,25 @@ export async function updateArticle(
   return getArticleDetail(articleId, db);
 }
 
+export async function deleteArticle(
+  articleId: string,
+  client?: Client,
+): Promise<boolean> {
+  const db = getClient(client);
+  const existing = await getArticleDetail(articleId, db);
+
+  if (!existing) {
+    return false;
+  }
+
+  await db.execute({
+    sql: `DELETE FROM articles WHERE id = ?`,
+    args: [articleId],
+  });
+
+  return true;
+}
+
 export async function saveArticleParse(
   articleId: string,
   parsedArticle: ParsedArticle,

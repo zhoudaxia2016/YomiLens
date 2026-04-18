@@ -59,6 +59,21 @@ export const api = {
     return json as ArticleDetail
   },
 
+  async deleteArticle(id: string) {
+    const res = await fetch(`/api/articles/${id}`, {
+      method: 'DELETE',
+    })
+
+    if (res.status === 204) {
+      return
+    }
+
+    const json = (await res.json()) as { error?: string }
+    if (!res.ok) {
+      throw new Error(json.error ?? `HTTP ${res.status}`)
+    }
+  },
+
   async parseStoredArticle(id: string) {
     const controller = new AbortController()
     const timeout = window.setTimeout(() => controller.abort(), 120_000)

@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import {
   createArticle,
+  deleteArticle,
   getArticleDetail,
   listArticles,
   saveArticleParse,
@@ -92,6 +93,16 @@ articlesRouter.put("/:id", async (c) => {
   }
 
   return c.json(detail);
+});
+
+articlesRouter.delete("/:id", async (c) => {
+  const deleted = await deleteArticle(c.req.param("id"));
+
+  if (!deleted) {
+    return c.json({ error: "文章不存在" }, 404);
+  }
+
+  return c.body(null, 204);
 });
 
 articlesRouter.post("/:id/parse", async (c) => {

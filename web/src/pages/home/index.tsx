@@ -1,6 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '@/api/client'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import {
   Select,
@@ -52,6 +62,8 @@ export function HomePage() {
     tags: [],
   })
   const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [pendingDelete, setPendingDelete] = useState<ArticleListItem | null>(null)
   const [parsing, setParsing] = useState(false)
   const [error, setError] = useState<ParseErrorState>(null)
   const [status, setStatus] = useState<string | null>(null)
@@ -282,6 +294,43 @@ export function HomePage() {
     return nextDetail
   }
 
+  async function handleDeleteArticle(articleId: string) {
+    try {
+      setDeleting(true)
+      setError(null)
+      setStatus(null)
+
+      await api.deleteArticle(articleId)
+
+      const remainingArticles = articles.filter((item) => item.id !== articleId)
+      const nextSelectedId = remainingArticles[0]?.id ?? null
+
+      setArticles(remainingArticles)
+      setSelectedId(nextSelectedId)
+      setDetail(null)
+      setSelection(null)
+      setTranslations(new Map())
+
+      if (nextSelectedId) {
+        await loadArticle(nextSelectedId)
+      } else {
+        setEditor({
+          title: '',
+          text: '',
+          tags: [],
+        })
+      }
+
+      setStatus('文章已删除。')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : '删除文章失败'
+      setError({ message })
+    } finally {
+      setPendingDelete(null)
+      setDeleting(false)
+    }
+  }
+
   async function translateArticle(articleId: string, article: ParsedArticle) {
     setTranslating(true)
     const newTranslations = new Map<number, TranslateParagraphOutput>()
@@ -428,6 +477,38 @@ export function HomePage() {
 
   return (
     <section className="flex flex-col gap-6 lg:flex-row">
+      <AlertDialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => {
+          if (!open && !deleting) {
+            setPendingDelete(null)
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>删除文章</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingDelete ? `将删除《${pendingDelete.title}》。` : ''}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>取消</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleting || !pendingDelete}
+              onClick={(event) => {
+                event.preventDefault()
+                if (!pendingDelete) {
+                  return
+                }
+                void handleDeleteArticle(pendingDelete.id)
+              }}
+            >
+              {deleting ? '删除中...' : '删除'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       {status ? (
         <div className="pointer-events-none fixed right-6 top-6 z-50 w-[min(24rem,calc(100vw-3rem))]">
           <Alert className="border-primary/15 bg-popover/95 shadow-[0_20px_50px_hsl(var(--panel-shadow)/0.16)] backdrop-blur" variant="success">
@@ -438,43 +519,69 @@ export function HomePage() {
       ) : null}
       <aside className="h-fit rounded-[28px] border border-sidebar-border bg-sidebar p-5 text-sidebar-foreground shadow-panel backdrop-blur-[14px] lg:sticky lg:top-6 lg:w-[320px] lg:shrink-0">
         <div className="mb-4 flex items-start justify-between gap-4">
-          <div>
+          <div className="min-w-0">
             <p className="m-0 text-xs font-bold uppercase tracking-[0.14em] text-primary/80">文章</p>
           </div>
-          <Button
-            className="py-2 text-sm"
-            type="button"
-            onClick={() => {
-              setSelectedId(null)
-              setDetail(null)
-              setEditor({
-                title: '',
-                text: '',
-                tags: [],
-              })
-              setStatus('已新建文章。')
-              setError(null)
-            }}
-          >
-            新建
-          </Button>
+          <div className="flex shrink-0 items-center gap-2">
+            <Button
+              className="py-2 text-sm"
+              type="button"
+              onClick={() => {
+                setSelectedId(null)
+                setDetail(null)
+                setEditor({
+                  title: '',
+                  text: '',
+                  tags: [],
+                })
+                setSelection(null)
+                setTranslations(new Map())
+                setStatus('已新建文章。')
+                setError(null)
+              }}
+            >
+              新建
+            </Button>
+          </div>
         </div>
         <div className="flex flex-col gap-0.5">
           {articles.map((item) => (
-            <Button
+            <div
               key={item.id}
               className={cn(
-                'relative min-h-11 justify-start rounded-2xl border border-transparent bg-transparent pl-5 pr-3 py-2.5 text-left text-sidebar-foreground shadow-none before:absolute before:left-1.5 before:top-1/2 before:h-5 before:w-[3px] before:-translate-y-1/2 before:rounded-full before:bg-primary before:opacity-0 hover:text-primary',
-                item.title === '未命名文章' && 'text-muted-foreground',
-                selectedId === item.id
-                  ? 'font-semibold text-foreground before:opacity-100'
-                  : '',
+                'group flex items-center gap-1 rounded-2xl',
+                selectedId === item.id && 'text-foreground',
               )}
-              type="button"
-              onClick={() => void loadArticle(item.id)}
             >
-              <span className="truncate text-sm font-semibold">{item.title}</span>
-            </Button>
+              <Button
+                variant="ghost"
+                className={cn(
+                  'relative min-h-11 flex-1 justify-start rounded-2xl border border-transparent bg-transparent pl-5 pr-2 py-2.5 text-left text-sidebar-foreground shadow-none hover:bg-transparent focus-visible:bg-transparent active:bg-transparent before:absolute before:left-1.5 before:top-1/2 before:h-5 before:w-[3px] before:-translate-y-1/2 before:rounded-full before:bg-primary/30 before:opacity-0 hover:text-primary hover:before:opacity-100',
+                  item.title === '未命名文章' && 'text-muted-foreground',
+                  selectedId === item.id
+                    ? 'font-semibold text-foreground before:opacity-100 before:bg-primary/45'
+                    : '',
+                )}
+                type="button"
+                onClick={() => void loadArticle(item.id)}
+              >
+                <span className="truncate text-sm font-semibold">{item.title}</span>
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 shrink-0 rounded-xl text-muted-foreground opacity-0 transition-opacity hover:bg-transparent hover:text-destructive focus-visible:bg-transparent focus-visible:text-destructive group-hover:opacity-100"
+                type="button"
+                aria-label={`删除${item.title}`}
+                disabled={saving || parsing || translating || deleting}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  setPendingDelete(item)
+                }}
+              >
+                删除
+              </Button>
+            </div>
           ))}
           {articles.length === 0 ? (
             <div className="px-1 pt-3 text-sm leading-6 text-muted-foreground">数据库里还没有文章，先新建一篇。</div>
