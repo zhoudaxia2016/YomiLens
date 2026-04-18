@@ -4,12 +4,22 @@ import type { ButtonHTMLAttributes } from 'react'
 import { cn } from '../../../lib/utils'
 
 const buttonVariants = cva(
-  'inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium transition-colors',
+  'inline-flex items-center justify-center whitespace-nowrap rounded-xl px-4 py-2 text-sm font-medium transition-[background-color,color,border-color,opacity,transform] duration-300 disabled:pointer-events-none disabled:opacity-50',
   {
     variants: {
       variant: {
-        default: 'bg-white text-slate-950 border border-slate-200 hover:bg-slate-100',
-        ghost: 'bg-transparent text-white hover:bg-white/10',
+        default:
+          'border border-primary bg-primary text-primary-foreground shadow-[0_8px_22px_hsl(var(--panel-shadow)/0.12)] hover:bg-transparent hover:text-primary active:translate-y-px',
+        secondary:
+          'border border-primary bg-primary text-primary-foreground shadow-[0_8px_22px_hsl(var(--panel-shadow)/0.12)] hover:bg-transparent hover:text-primary active:translate-y-px',
+        outline:
+          'border border-primary bg-primary text-primary-foreground shadow-[0_8px_22px_hsl(var(--panel-shadow)/0.12)] hover:bg-transparent hover:text-primary active:translate-y-px',
+        ghost:
+          'border border-primary bg-primary text-primary-foreground shadow-[0_8px_22px_hsl(var(--panel-shadow)/0.12)] hover:bg-transparent hover:text-primary active:translate-y-px',
+        underline:
+          'border border-primary bg-primary text-primary-foreground shadow-[0_8px_22px_hsl(var(--panel-shadow)/0.12)] hover:bg-transparent hover:text-primary active:translate-y-px',
+        destructive:
+          'border border-destructive bg-destructive text-destructive-foreground shadow-[0_8px_22px_hsl(var(--panel-shadow)/0.1)] hover:bg-transparent hover:text-destructive active:translate-y-px',
       },
     },
     defaultVariants: {

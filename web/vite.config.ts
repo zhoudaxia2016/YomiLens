@@ -18,8 +18,8 @@ export default defineConfig(({ mode }) => ({
         start_url: mode === 'production' ? '/YomiLens/' : '/',
         scope: mode === 'production' ? '/YomiLens/' : '/',
         display: 'standalone',
-        background_color: '#0b1020',
-        theme_color: '#4f46e5',
+        background_color: '#F8F8F3',
+        theme_color: '#349F87',
         icons: [
           {
             src: 'pwa-icon.svg',

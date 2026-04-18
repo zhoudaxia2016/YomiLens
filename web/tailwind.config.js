@@ -9,6 +9,10 @@ export default {
         ring: 'hsl(var(--ring))',
         background: 'hsl(var(--background))',
         foreground: 'hsl(var(--foreground))',
+        popover: {
+          DEFAULT: 'hsl(var(--popover))',
+          foreground: 'hsl(var(--popover-foreground))',
+        },
         primary: {
           DEFAULT: 'hsl(var(--primary))',
           foreground: 'hsl(var(--primary-foreground))',
@@ -33,11 +37,33 @@ export default {
           DEFAULT: 'hsl(var(--card))',
           foreground: 'hsl(var(--card-foreground))',
         },
+        sidebar: {
+          DEFAULT: 'hsl(var(--sidebar))',
+          foreground: 'hsl(var(--sidebar-foreground))',
+          active: 'hsl(var(--sidebar-active))',
+          'active-foreground': 'hsl(var(--sidebar-active-foreground))',
+          border: 'hsl(var(--sidebar-border))',
+        },
+        panel: {
+          DEFAULT: 'hsl(var(--panel))',
+          foreground: 'hsl(var(--panel-foreground))',
+          muted: 'hsl(var(--panel-muted))',
+          border: 'hsl(var(--panel-border))',
+        },
+        brand: {
+          DEFAULT: 'hsl(var(--brand))',
+          foreground: 'hsl(var(--brand-foreground))',
+          soft: 'hsl(var(--brand-soft))',
+          emphasis: 'hsl(var(--brand-emphasis))',
+        },
       },
       borderRadius: {
         lg: 'var(--radius)',
         md: 'calc(var(--radius) - 2px)',
         sm: 'calc(var(--radius) - 4px)',
+      },
+      boxShadow: {
+        panel: '0 20px 44px hsl(var(--panel-shadow) / 0.18)',
       },
     },
   },
