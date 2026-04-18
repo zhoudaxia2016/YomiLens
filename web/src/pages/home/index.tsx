@@ -47,6 +47,9 @@ export function HomePage() {
     }
     return window.localStorage.getItem(TRANSLATION_CONFIG_ID_STORAGE_KEY) ?? ''
   })
+  const [availableModels, setAvailableModels] = useState<string[]>([])
+  const [selectedModel, setSelectedModel] = useState<string>('')
+  const [loadingModels, setLoadingModels] = useState(false)
 
   useEffect(() => {
     void loadArticles()
@@ -141,6 +144,22 @@ export function HomePage() {
     } catch (err) {
       const message = err instanceof Error ? err.message : '加载翻译模型配置失败'
       setError({ message })
+    }
+  }
+
+  async function loadModels() {
+    setLoadingModels(true)
+    try {
+      const result = await api.getTranslateModels()
+      setAvailableModels(result.models)
+      if (result.models.length > 0 && !selectedModel) {
+        setSelectedModel(result.models[0])
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : '获取模型列表失败'
+      setError({ message })
+    } finally {
+      setLoadingModels(false)
     }
   }
 
@@ -244,6 +263,7 @@ export function HomePage() {
             })),
           },
           configId: selectedTranslateConfigId || translateConfig?.defaultConfigId,
+          model: selectedModel || undefined,
         })
 
         console.log(`[Frontend] Paragraph ${i} translated successfully`)
@@ -346,10 +366,9 @@ export function HomePage() {
           <div className="mt-6 grid gap-3 border-t border-sidebar-border/80 pt-4">
             <div>
               <p className="m-0 text-xs font-bold uppercase tracking-[0.14em] text-primary/80">翻译模型</p>
-              <p className="mt-1 text-sm leading-5 text-muted-foreground">由服务端提供可选 provider 和 model，前端只负责切换。</p>
             </div>
             <label className="grid gap-1.5">
-              <span className="text-xs font-bold uppercase tracking-[0.08em] text-primary/80">当前模型</span>
+              <span className="text-xs font-bold uppercase tracking-[0.08em] text-primary/80">Provider</span>
               <select
                 className="h-11 rounded-2xl border border-input bg-background/90 px-4 text-sm text-foreground outline-none transition-[border-color,box-shadow,background-color] focus:border-primary focus:bg-background focus:shadow-[0_0_0_3px_hsl(var(--brand-soft))]"
                 value={selectedTranslateConfigId || translateConfig.defaultConfigId}
@@ -357,10 +376,35 @@ export function HomePage() {
               >
                 {translateConfig.configs.map((item) => (
                   <option value={item.id} key={item.id}>
-                    {item.label} · {item.provider} / {item.model}
+                    {item.label} ({item.provider})
                   </option>
                 ))}
               </select>
+            </label>
+            <label className="grid gap-1.5">
+              <span className="text-xs font-bold uppercase tracking-[0.08em] text-primary/80">Model</span>
+              {availableModels.length > 0 ? (
+                <select
+                  className="h-11 rounded-2xl border border-input bg-background/90 px-4 text-sm text-foreground outline-none transition-[border-color,box-shadow,background-color] focus:border-primary focus:bg-background focus:shadow-[0_0_0_3px_hsl(var(--brand-soft))]"
+                  value={selectedModel}
+                  onChange={(event) => setSelectedModel(event.target.value)}
+                >
+                  {availableModels.map((model) => (
+                    <option value={model} key={model}>
+                      {model}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <button
+                  type="button"
+                  onClick={loadModels}
+                  disabled={loadingModels}
+                  className="h-11 rounded-2xl border border-input bg-background/90 px-4 text-sm text-muted-foreground hover:bg-background hover:text-foreground disabled:opacity-50"
+                >
+                  {loadingModels ? '获取中...' : '点击获取模型列表'}
+                </button>
+              )}
             </label>
           </div>
         ) : null}

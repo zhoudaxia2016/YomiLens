@@ -43,8 +43,12 @@ async function migrateTagsToJson(): Promise<void> {
       });
     }
 
+    const selectCols = ["id", "tags_json"];
+    if (names.has("tags")) selectCols.push("tags");
+    if (names.has("notes")) selectCols.push("notes");
+
     const rows = await client.execute({
-      sql: "SELECT id, tags, notes, tags_json FROM articles",
+      sql: `SELECT ${selectCols.join(", ")} FROM articles`,
       args: [],
     });
 
