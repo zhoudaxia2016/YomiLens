@@ -10,6 +10,24 @@ export type TranslationSentence = {
   text: string
 }
 
+export type TranslationModelProvider = "deepseek" | "llama";
+
+export type TranslationModelConfig = {
+  id: string;
+  label: string;
+  provider: TranslationModelProvider;
+  baseUrl: string;
+  model: string;
+  apiKey?: string;
+};
+
+export type TranslationModelConfigSummary = {
+  id: string;
+  label: string;
+  provider: TranslationModelProvider;
+  model: string;
+};
+
 export type TranslateParagraphInput = {
   currentParagraphIndex: number
   memory: TranslationMemory | Record<string, never>
@@ -21,6 +39,7 @@ export type TranslateParagraphInput = {
   currentParagraph: {
     sentences: TranslationSentence[]
   }
+  configId?: string
 }
 
 export type TranslateParagraphOutput = {
@@ -34,4 +53,9 @@ export type TranslateParagraphOutput = {
     }>
   }>
   memory: TranslationMemory
+}
+
+export type TranslateConfigResponse = {
+  defaultConfigId: string
+  configs: TranslationModelConfigSummary[]
 }

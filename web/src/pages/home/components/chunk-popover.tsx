@@ -1,7 +1,16 @@
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
-import type { Chunk, Sentence, Token } from '@/types'
+import type { Chunk, ChunkRole, Sentence, Token } from '@/types'
 import { buildTokenKey, isPunctuationToken } from '../utils'
+
+const CHUNK_ROLE_LABEL: Record<ChunkRole, string> = {
+  topic: '主题',
+  subject: '主语',
+  object: '宾语',
+  modifier: '修饰语',
+  predicate: '谓语',
+  other: '其他成分',
+}
 
 type ChunkPopoverProps = {
   chunk: Chunk
@@ -72,8 +81,8 @@ export function ChunkPopover({
             <dd className="mt-1 text-sm leading-6 text-foreground">{token.lemma}</dd>
           </div>
           <div className="rounded-2xl border border-panel-border bg-background/75 px-4 py-3">
-            <dt className="text-xs font-bold uppercase tracking-[0.08em] text-primary/80">语块角色</dt>
-            <dd className="mt-1 text-sm leading-6 text-foreground">{chunk.roleHint}</dd>
+            <dt className="text-xs font-bold uppercase tracking-[0.08em] text-primary/80">句子成分</dt>
+            <dd className="mt-1 text-sm leading-6 text-foreground">{CHUNK_ROLE_LABEL[chunk.roleHint]}</dd>
           </div>
         </dl>
         {token.conjugation ? (

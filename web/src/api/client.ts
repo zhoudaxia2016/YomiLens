@@ -3,6 +3,7 @@ import type {
   ListArticlesResponse,
   ParseArticleError,
   ParseArticleResponse,
+  TranslateConfigResponse,
   UpsertArticleInput,
   TranslateParagraphInput,
   TranslateParagraphOutput,
@@ -150,5 +151,14 @@ export const api = {
     } finally {
       window.clearTimeout(timeout)
     }
+  },
+
+  async getTranslateConfig() {
+    const res = await fetch('/api/translate/config')
+    const json = (await res.json()) as TranslateConfigResponse | { error: string }
+    if (!res.ok) {
+      throw new Error('error' in json ? json.error : `HTTP ${res.status}`)
+    }
+    return json as TranslateConfigResponse
   },
 }

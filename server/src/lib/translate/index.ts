@@ -1,4 +1,5 @@
 import type {
+  TranslationModelConfig,
   TranslateParagraphInput,
   TranslateParagraphOutput,
 } from "./types.ts";
@@ -55,10 +56,9 @@ function parseTerms(content: string): Array<{ japanese: string; chinese: string 
 
 export async function translateParagraph(
   input: TranslateParagraphInput,
-  apiKey: string,
-  baseUrl: string
+  config: TranslationModelConfig
 ): Promise<TranslateParagraphOutput> {
-  const apiUrl = `${baseUrl}/chat/completions`;
+  const apiUrl = `${config.baseUrl.replace(/\/+$/, "")}/chat/completions`;
   
   const sentencesText = input.currentParagraph.sentences
     .map((s) => s.text)
@@ -95,10 +95,10 @@ ${termsText}`;
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
+      ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}),
     },
     body: JSON.stringify({
-      model: "deepseek-chat",
+      model: config.model,
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: userMessage },
@@ -111,7 +111,7 @@ ${termsText}`;
   if (!response.ok) {
     const errorText = await response.text();
     console.error(`[Translate] API error: ${response.status} - ${errorText}`);
-    throw new Error(`DeepSeek API error: ${response.status} - ${errorText}`);
+    throw new Error(`${config.provider} API error: ${response.status} - ${errorText}`);
   }
 
   const data = await response.json();
@@ -123,7 +123,7 @@ ${termsText}`;
   console.log(`[Usage] prompt=${usage?.prompt_tokens}, completion=${usage?.completion_tokens}, total=${usage?.total_tokens}`);
 
   if (!content) {
-    throw new Error("DeepSeek API returned empty response");
+    throw new Error(`${config.provider} API returned empty response`);
   }
 
   console.log(`\n[Raw Output]\n${content.substring(0, 500)}...`);
@@ -158,6 +158,6 @@ ${termsText}`;
   } catch (e) {
     console.error(`[Translate] Parse error: ${e}`);
     console.error(`[Translate] Full content:\n${content}`);
-    throw new Error(`Failed to parse DeepSeek response: ${e}`);
+    throw new Error(`Failed to parse ${config.provider} response: ${e}`);
   }
 }
