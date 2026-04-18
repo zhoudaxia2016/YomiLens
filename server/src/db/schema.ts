@@ -1,79 +1,45 @@
 import { getDbClient } from "./client.ts";
 
-async function migrateNotesToTags(): Promise<void> {
-  const client = getDbClient();
-
-  try {
-    const res = await client.execute({ sql: "PRAGMA table_info(articles)", args: [] });
-    const names = new Set(
-      res.rows.map((row) => String((row as Record<string, unknown>).name)),
-    );
-
-    if (!names.has("tags")) {
-      await client.execute({
-        sql: "ALTER TABLE articles ADD COLUMN tags TEXT NOT NULL DEFAULT ''",
-        args: [],
-      });
-    }
-
-    if (names.has("notes")) {
-      await client.execute({
-        sql: "UPDATE articles SET tags = notes WHERE TRIM(tags) = ''",
-        args: [],
-      });
-    }
-  } catch (error) {
-    console.warn("[db] migration notes->tags failed", error);
-  }
+function hasTable(names: Set<string>, tableName: string) {
+  return names.has(tableName);
 }
 
-async function migrateTagsToJson(): Promise<void> {
+async function listTables() {
   const client = getDbClient();
+  const res = await client.execute({
+    sql: "SELECT name FROM sqlite_master WHERE type = 'table'",
+    args: [],
+  });
 
-  try {
-    const res = await client.execute({ sql: "PRAGMA table_info(articles)", args: [] });
-    const names = new Set(
-      res.rows.map((row) => String((row as Record<string, unknown>).name)),
-    );
-
-    if (!names.has("tags_json")) {
-      await client.execute({
-        sql: "ALTER TABLE articles ADD COLUMN tags_json TEXT NOT NULL DEFAULT '[]'",
-        args: [],
-      });
-    }
-
-    const selectCols = ["id", "tags_json"];
-    if (names.has("tags")) selectCols.push("tags");
-    if (names.has("notes")) selectCols.push("notes");
-
-    const rows = await client.execute({
-      sql: `SELECT ${selectCols.join(", ")} FROM articles`,
-      args: [],
-    });
-
-    for (const row of rows.rows) {
-      const record = row as Record<string, unknown>;
-      const current = String(record.tags_json ?? "[]");
-      if (current.trim() !== "[]") {
-        continue;
-      }
-
-      const raw = String(record.tags ?? record.notes ?? "").trim();
-      const nextTags = raw ? [raw] : [];
-      await client.execute({
-        sql: "UPDATE articles SET tags_json = ? WHERE id = ?",
-        args: [JSON.stringify(nextTags), String(record.id)],
-      });
-    }
-  } catch (error) {
-    console.warn("[db] migration tags->tags_json failed", error);
-  }
+  return new Set(res.rows.map((row) => String((row as Record<string, unknown>).name)));
 }
 
-export async function initDb(): Promise<void> {
-  await Deno.mkdir(new URL("../../data/", import.meta.url), { recursive: true }).catch(() => {});
+async function listColumns(tableName: string) {
+  const client = getDbClient();
+  const res = await client.execute({
+    sql: `PRAGMA table_info(${tableName})`,
+    args: [],
+  });
 
+  return new Set(res.rows.map((row) => String((row as Record<string, unknown>).name)));
+}
+
+async function getTableSql(tableName: string): Promise<string | null> {
+  const client = getDbClient();
+  const res = await client.execute({
+    sql: "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?",
+    args: [tableName],
+  });
+
+  if (res.rows.length === 0) {
+    return null;
+  }
+
+  const sql = (res.rows[0] as Record<string, unknown>).sql;
+  return typeof sql === "string" ? sql : null;
+}
+
+async function createLatestSchema(): Promise<void> {
   const client = getDbClient();
 
   await client.batch([
@@ -81,19 +47,11 @@ export async function initDb(): Promise<void> {
       sql: `CREATE TABLE IF NOT EXISTS articles (
   id TEXT PRIMARY KEY,
   title TEXT NOT NULL,
-  source_text TEXT NOT NULL,
-  tags TEXT NOT NULL DEFAULT '',
-  source_locale TEXT NOT NULL DEFAULT 'ja-JP',
-  status TEXT NOT NULL DEFAULT 'draft',
-  latest_parse_id TEXT,
-  latest_parse_version TEXT,
-  paragraph_count INTEGER NOT NULL DEFAULT 0,
-  sentence_count INTEGER NOT NULL DEFAULT 0,
-  token_count INTEGER NOT NULL DEFAULT 0,
-  chunk_count INTEGER NOT NULL DEFAULT 0,
+  text TEXT NOT NULL,
+  tags_json TEXT NOT NULL DEFAULT '[]',
+  latest_process_id TEXT,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL,
-  last_parsed_at TEXT
+  updated_at TEXT NOT NULL
 )`,
       args: [],
     },
@@ -103,28 +61,245 @@ ON articles (updated_at DESC)`,
       args: [],
     },
     {
-      sql: `CREATE TABLE IF NOT EXISTS article_parses (
+      sql: `CREATE TABLE IF NOT EXISTS article_processes (
   id TEXT PRIMARY KEY,
   article_id TEXT NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
-  parser_version TEXT NOT NULL,
-  source_text_hash TEXT NOT NULL,
-  article_json TEXT NOT NULL,
-  raw_model_output TEXT NOT NULL,
-  paragraph_count INTEGER NOT NULL DEFAULT 0,
-  sentence_count INTEGER NOT NULL DEFAULT 0,
-  token_count INTEGER NOT NULL DEFAULT 0,
-  chunk_count INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL
+  text TEXT NOT NULL,
+  parse_json TEXT,
+  translation_json TEXT,
+  provider TEXT,
+  model TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
 )`,
       args: [],
     },
     {
-      sql: `CREATE INDEX IF NOT EXISTS idx_article_parses_article_created
-ON article_parses (article_id, created_at DESC)`,
+      sql: `CREATE INDEX IF NOT EXISTS idx_article_processes_article_updated
+ON article_processes (article_id, updated_at DESC)`,
+      args: [],
+    },
+  ], "write");
+}
+
+async function repairArticleProcessesForeignKey(): Promise<void> {
+  const client = getDbClient();
+  const tableSql = await getTableSql("article_processes");
+
+  if (!tableSql || !tableSql.includes('REFERENCES "articles_legacy"(id)')) {
+    return;
+  }
+
+  await client.batch([
+    {
+      sql: "PRAGMA foreign_keys = OFF",
+      args: [],
+    },
+    {
+      sql: "ALTER TABLE article_processes RENAME TO article_processes_legacy_fk",
+      args: [],
+    },
+    {
+      sql: "DROP INDEX IF EXISTS idx_article_processes_article_updated",
+      args: [],
+    },
+    {
+      sql: `CREATE TABLE article_processes (
+  id TEXT PRIMARY KEY,
+  article_id TEXT NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+  text TEXT NOT NULL,
+  parse_json TEXT,
+  translation_json TEXT,
+  provider TEXT,
+  model TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+)`,
+      args: [],
+    },
+    {
+      sql: `CREATE INDEX IF NOT EXISTS idx_article_processes_article_updated
+ON article_processes (article_id, updated_at DESC)`,
+      args: [],
+    },
+    {
+      sql: `INSERT INTO article_processes (
+  id, article_id, text, parse_json, translation_json, provider, model, created_at, updated_at
+)
+SELECT
+  id, article_id, text, parse_json, translation_json, provider, model, created_at, updated_at
+FROM article_processes_legacy_fk`,
+      args: [],
+    },
+    {
+      sql: "DROP TABLE article_processes_legacy_fk",
+      args: [],
+    },
+    {
+      sql: "PRAGMA foreign_keys = ON",
+      args: [],
+    },
+  ], "write");
+}
+
+async function migrateToProcessSchema(): Promise<void> {
+  const client = getDbClient();
+  const tables = await listTables();
+
+  if (!hasTable(tables, "articles")) {
+    return;
+  }
+
+  const articleColumns = await listColumns("articles");
+  const articleHasLatestProcess = articleColumns.has("latest_process_id");
+  const articleHasText = articleColumns.has("text");
+  const processTableExists = hasTable(tables, "article_processes");
+
+  if (articleHasLatestProcess && articleHasText && processTableExists) {
+    return;
+  }
+
+  const legacyHasSourceText = articleColumns.has("source_text");
+  const legacyHasTagsJson = articleColumns.has("tags_json");
+  const legacyHasCreatedAt = articleColumns.has("created_at");
+  const legacyHasUpdatedAt = articleColumns.has("updated_at");
+  const legacyHasLatestParseId = articleColumns.has("latest_parse_id");
+  const legacyParseTableExists = hasTable(tables, "article_parses");
+
+  await client.batch([
+    {
+      sql: "PRAGMA foreign_keys = OFF",
+      args: [],
+    },
+    {
+      sql: `ALTER TABLE articles RENAME TO articles_legacy`,
+      args: [],
+    },
+    {
+      sql: `CREATE TABLE IF NOT EXISTS articles (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  text TEXT NOT NULL,
+  tags_json TEXT NOT NULL DEFAULT '[]',
+  latest_process_id TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+)`,
+      args: [],
+    },
+    {
+      sql: `CREATE INDEX IF NOT EXISTS idx_articles_updated_at
+ON articles (updated_at DESC)`,
+      args: [],
+    },
+    {
+      sql: `CREATE TABLE IF NOT EXISTS article_processes (
+  id TEXT PRIMARY KEY,
+  article_id TEXT NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+  text TEXT NOT NULL,
+  parse_json TEXT,
+  translation_json TEXT,
+  provider TEXT,
+  model TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+)`,
+      args: [],
+    },
+    {
+      sql: `CREATE INDEX IF NOT EXISTS idx_article_processes_article_updated
+ON article_processes (article_id, updated_at DESC)`,
       args: [],
     },
   ], "write");
 
-  await migrateNotesToTags();
-  await migrateTagsToJson();
+  const articleRows = await client.execute({
+    sql: `SELECT * FROM articles_legacy`,
+    args: [],
+  });
+
+  for (const row of articleRows.rows) {
+    const record = row as Record<string, unknown>;
+    const articleId = String(record.id);
+    const title = String(record.title ?? "未命名文章");
+    const text = String(
+      legacyHasSourceText ? record.source_text ?? "" : record.text ?? "",
+    );
+    const tagsJson = legacyHasTagsJson ? String(record.tags_json ?? "[]") : "[]";
+    const createdAt = String(
+      (legacyHasCreatedAt ? record.created_at : null) ?? new Date().toISOString(),
+    );
+    const updatedAt = String(
+      (legacyHasUpdatedAt ? record.updated_at : null) ?? createdAt,
+    );
+
+    let latestProcessId: string | null = null;
+
+    if (legacyHasLatestParseId && legacyParseTableExists && record.latest_parse_id) {
+      const latestParseId = String(record.latest_parse_id);
+      const parseRes = await client.execute({
+        sql: "SELECT * FROM article_parses WHERE id = ?",
+        args: [latestParseId],
+      });
+
+      if (parseRes.rows.length > 0) {
+        const parseRecord = parseRes.rows[0] as Record<string, unknown>;
+        latestProcessId = crypto.randomUUID();
+        const processCreatedAt = String(parseRecord.created_at ?? updatedAt);
+
+        await client.execute({
+          sql: `INSERT INTO article_processes (
+            id, article_id, text, parse_json, translation_json, provider, model, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          args: [
+            latestProcessId,
+            articleId,
+            text,
+            String(parseRecord.article_json),
+            null,
+            null,
+            null,
+            processCreatedAt,
+            processCreatedAt,
+          ],
+        });
+      }
+    }
+
+    await client.execute({
+      sql: `INSERT INTO articles (
+        id, title, text, tags_json, latest_process_id, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      args: [articleId, title, text, tagsJson, latestProcessId, createdAt, updatedAt],
+    });
+  }
+
+  const cleanupStatements = [
+    {
+      sql: "DROP TABLE articles_legacy",
+      args: [],
+    },
+  ];
+
+  if (legacyParseTableExists) {
+    cleanupStatements.push({
+      sql: "DROP TABLE article_parses",
+      args: [],
+    });
+  }
+
+  cleanupStatements.push({
+    sql: "PRAGMA foreign_keys = ON",
+    args: [],
+  });
+
+  await client.batch(cleanupStatements, "write");
+}
+
+export async function initDb(): Promise<void> {
+  await Deno.mkdir(new URL("../../data/", import.meta.url), { recursive: true }).catch(() => {});
+  await createLatestSchema();
+  await migrateToProcessSchema();
+  await repairArticleProcessesForeignKey();
+  await createLatestSchema();
 }

@@ -1,8 +1,8 @@
-import type { HTMLAttributes } from 'react'
+import * as React from 'react'
 import { cva, type VariantProps } from 'class-variance-authority'
 import { cn } from '@/lib/utils'
 
-const alertVariants = cva('relative w-full rounded-2xl border px-4 py-3 text-sm', {
+const alertVariants = cva('relative w-full rounded-2xl border p-4 text-sm [&>svg~*]:pl-7 [&>svg]:absolute [&>svg]:left-4 [&>svg]:top-4 [&>svg]:text-foreground', {
   variants: {
     variant: {
       default: 'border-panel-border bg-panel-muted/70 text-foreground',
@@ -15,16 +15,26 @@ const alertVariants = cva('relative w-full rounded-2xl border px-4 py-3 text-sm'
   },
 })
 
-type AlertProps = HTMLAttributes<HTMLDivElement> & VariantProps<typeof alertVariants>
+const Alert = React.forwardRef<
+  HTMLDivElement,
+  React.HTMLAttributes<HTMLDivElement> & VariantProps<typeof alertVariants>
+>(({ className, variant, ...props }, ref) => (
+  <div ref={ref} role="alert" className={cn(alertVariants({ variant }), className)} {...props} />
+))
+Alert.displayName = 'Alert'
 
-export function Alert({ className, variant, ...props }: AlertProps) {
-  return <div className={cn(alertVariants({ variant }), className)} role="alert" {...props} />
-}
+const AlertTitle = React.forwardRef<HTMLParagraphElement, React.HTMLAttributes<HTMLHeadingElement>>(
+  ({ className, ...props }, ref) => (
+    <h5 ref={ref} className={cn('mb-1 font-medium leading-none tracking-tight', className)} {...props} />
+  ),
+)
+AlertTitle.displayName = 'AlertTitle'
 
-export function AlertTitle({ className, ...props }: HTMLAttributes<HTMLHeadingElement>) {
-  return <h5 className={cn('mb-1 font-semibold leading-none tracking-tight', className)} {...props} />
-}
+const AlertDescription = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
+  ({ className, ...props }, ref) => (
+    <div ref={ref} className={cn('text-sm leading-6 [&_p]:leading-relaxed', className)} {...props} />
+  ),
+)
+AlertDescription.displayName = 'AlertDescription'
 
-export function AlertDescription({ className, ...props }: HTMLAttributes<HTMLParagraphElement>) {
-  return <div className={cn('text-sm leading-6 [&_p]:m-0', className)} {...props} />
-}
+export { Alert, AlertDescription, AlertTitle }

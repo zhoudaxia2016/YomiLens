@@ -139,6 +139,48 @@ function resolveTranslationConfig(payload: TranslateParagraphInput): Translation
   };
 }
 
+function findTranslationConfig(configId?: string | null): TranslationModelConfig | null {
+  const { defaultConfigId, configs } = loadTranslationConfigs();
+  const targetId = configId?.trim() || defaultConfigId;
+  return configs.find((item) => item.id === targetId) ?? configs[0] ?? null;
+}
+
+async function tryFetchOpenAIModels(config: TranslationModelConfig): Promise<string[] | null> {
+  const modelsUrl = `${config.baseUrl.replace(/\/+$/, "")}/models`;
+  const response = await fetch(modelsUrl, {
+    headers: config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {},
+  });
+
+  if (!response.ok) {
+    return null;
+  }
+
+  const data = await response.json() as { data?: Array<{ id?: string }> };
+  const models = data.data
+    ?.map((item) => item.id?.trim())
+    .filter((item): item is string => Boolean(item)) ?? [];
+
+  return models;
+}
+
+async function tryFetchOllamaModels(config: TranslationModelConfig): Promise<string[] | null> {
+  const modelsUrl = config.baseUrl.replace(/\/+$/, "").replace(/\/v1$/, "");
+  const response = await fetch(`${modelsUrl}/api/tags`, {
+    headers: config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {},
+  });
+
+  if (!response.ok) {
+    return null;
+  }
+
+  const data = await response.json() as { models?: Array<{ name?: string }> };
+  const models = data.models
+    ?.map((item) => item.name?.trim())
+    .filter((item): item is string => Boolean(item)) ?? [];
+
+  return models;
+}
+
 translateRouter.get("/config", (c) => {
   const { defaultConfigId, configs } = loadTranslationConfigs();
   const response: TranslateConfigResponse = {
@@ -155,8 +197,7 @@ translateRouter.get("/config", (c) => {
 });
 
 translateRouter.get("/models", async (c) => {
-  const { configs } = loadTranslationConfigs();
-  const config = configs[0];
+  const config = findTranslationConfig(c.req.query("configId"));
 
   if (!config?.baseUrl) {
     return c.json({ error: "未配置 Base URL" }, 400);
@@ -170,25 +211,20 @@ translateRouter.get("/models", async (c) => {
     });
   }
 
-  // Ollama/Llama 使用 /api/tags
   try {
-    const modelsUrl = config.baseUrl.replace(/\/+$/, "").replace(/\/v1$/, "");
-    
-    const response = await fetch(`${modelsUrl}/api/tags`, {
-      headers: config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {},
-    });
+    // README 里的 llama 配置走 OpenAI 兼容接口；部分本地服务仍然只支持 Ollama 的 /api/tags。
+    const models =
+      (await tryFetchOpenAIModels(config)) ??
+      (await tryFetchOllamaModels(config));
 
-    if (!response.ok) {
-      return c.json({ 
-        error: `获取模型列表失败: ${response.status}`,
+    if (!models) {
+      return c.json({
+        error: "获取模型列表失败，请确认接口支持 /models 或 /api/tags",
         models: [],
         provider: config.provider,
       });
     }
 
-    const data = await response.json();
-    const models = data.models?.map((m: { name: string }) => m.name) || [];
-    
     return c.json({ models, provider: config.provider });
   } catch (error) {
     const message = error instanceof Error ? error.message : "获取模型列表失败";

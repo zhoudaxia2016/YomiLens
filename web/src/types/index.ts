@@ -96,46 +96,37 @@ export type ParsedArticle = {
 
 export type ParseArticleResponse = {
   article: ParsedArticle;
-  rawModelOutput: string;
 };
 
 export type ParseArticleError = {
   error: string;
-  rawModelOutput?: string;
 };
-
-export type ArticleStatus = 'draft' | 'parsed'
 
 export type ArticleRecord = {
   id: string
   title: string
-  sourceText: string
+  text: string
   tags: string[]
-  sourceLocale: 'ja-JP'
-  status: ArticleStatus
-  latestParseId: string | null
-  latestParseVersion: string | null
-  paragraphCount: number
-  sentenceCount: number
-  tokenCount: number
-  chunkCount: number
+  latestProcessId: string | null
   createdAt: string
   updatedAt: string
-  lastParsedAt: string | null
 }
 
-export type ArticleParseRecord = {
+export type StoredArticleTranslation = {
+  paragraphs: TranslateParagraphOutput[]
+  memory: TranslationMemory | Record<string, never>
+}
+
+export type ArticleProcessRecord = {
   id: string
   articleId: string
-  parserVersion: string
-  sourceTextHash: string
-  article: ParsedArticle
-  rawModelOutput: string
-  paragraphCount: number
-  sentenceCount: number
-  tokenCount: number
-  chunkCount: number
+  text: string
+  parse: ParsedArticle | null
+  translation: StoredArticleTranslation | null
+  provider: TranslationModelProvider | null
+  model: string | null
   createdAt: string
+  updatedAt: string
 }
 
 export type ArticleListItem = {
@@ -145,7 +136,7 @@ export type ArticleListItem = {
 
 export type ArticleDetail = {
   article: ArticleRecord
-  latestParse: ArticleParseRecord | null
+  latestProcess: ArticleProcessRecord | null
 }
 
 export type ListArticlesResponse = {
@@ -154,7 +145,7 @@ export type ListArticlesResponse = {
 
 export type UpsertArticleInput = {
   title: string
-  sourceText: string
+  text: string
   tags: string[]
 }
 

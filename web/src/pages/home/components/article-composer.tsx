@@ -10,30 +10,32 @@ import type { ArticleRecord } from '@/types'
 type ArticleComposerProps = {
   article: ArticleRecord | null
   title: string
-  sourceText: string
+  text: string
   tags: string[]
   saving: boolean
   parsing: boolean
+  translating: boolean
   errorMessage: string | null
-  onSubmit: (event: React.FormEvent<HTMLFormElement>) => Promise<void>
   onParse: () => Promise<void>
+  onTranslate: () => Promise<void>
   onTitleChange: (value: string) => void
-  onSourceTextChange: (value: string) => void
+  onTextChange: (value: string) => void
   onTagsChange: (value: string[]) => void
 }
 
 export function ArticleComposer({
-  article,
+  article: _article,
   title,
-  sourceText,
+  text,
   tags,
   saving,
   parsing,
+  translating,
   errorMessage,
-  onSubmit,
   onParse,
+  onTranslate,
   onTitleChange,
-  onSourceTextChange,
+  onTextChange,
   onTagsChange,
 }: ArticleComposerProps) {
   const [tagInput, setTagInput] = useState('')
@@ -56,35 +58,33 @@ export function ArticleComposer({
           <CardTitle className="text-2xl text-foreground">文章信息</CardTitle>
         </div>
         <div className="flex flex-wrap gap-2.5">
-          <Button className="py-1.5" type="submit" form="article-composer-form" disabled={saving}>
-            {saving ? '保存中…' : article ? '保存修改' : '创建文章'}
+          <Button className="py-1.5" type="button" onClick={() => void onParse()} disabled={saving || parsing}>
+            {parsing ? '解析中…' : '解析'}
           </Button>
-          <Button className="py-1.5" type="button" onClick={() => void onParse()} disabled={parsing || !article}>
-            {parsing ? '解析中…' : '保存并解析'}
+          <Button className="py-1.5" type="button" onClick={() => void onTranslate()} disabled={saving || translating}>
+            {translating ? '翻译中…' : '翻译'}
           </Button>
         </div>
       </CardHeader>
       <CardContent className="pt-0">
-        <form id="article-composer-form" onSubmit={onSubmit}>
-          <div className="mb-4 grid items-start gap-4 lg:grid-cols-[1.2fr_1fr]">
-            <div className="grid gap-2">
+        <form>
+          <div className="mb-4 flex flex-col items-start gap-4 lg:flex-row">
+            <div className="flex w-full min-w-0 flex-1 flex-col gap-2">
               <label className="text-xs font-bold uppercase tracking-[0.08em] text-primary/80" htmlFor="article-title">
                 标题
               </label>
-              <div className="grid gap-2">
-                <Input
-                  id="article-title"
-                  value={title}
-                  onChange={(event) => onTitleChange(event.target.value)}
-                  placeholder="例如：渋谷の朝にある小さな変化"
-                />
-              </div>
+              <Input
+                id="article-title"
+                value={title}
+                onChange={(event) => onTitleChange(event.target.value)}
+                placeholder="例如：渋谷の朝にある小さな変化"
+              />
             </div>
-            <div className="grid gap-2">
+            <div className="flex w-full min-w-0 flex-col gap-2 lg:w-[40%] lg:max-w-[26rem]">
               <label className="text-xs font-bold uppercase tracking-[0.08em] text-primary/80" htmlFor="article-tags">
                 标签
               </label>
-              <div className="grid gap-2">
+              <div className="flex flex-col gap-2">
                 <div className="flex items-stretch gap-2.5">
                   <Input
                     id="article-tags"
@@ -106,10 +106,11 @@ export function ArticleComposer({
                 <div className="mt-1 flex min-h-8 flex-wrap gap-2.5">
                   {tags.length > 0 ? (
                     tags.map((tag) => (
-                      <Badge className="gap-2 pr-2" variant="secondary" key={tag}>
+                      <Badge className="gap-1.5 border-primary/15 bg-accent/75 px-2 py-1 text-foreground" variant="secondary" key={tag}>
                         <span>{tag}</span>
                         <button
-                          className="bg-transparent p-0 leading-none text-inherit"
+                          className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-transparent bg-background/75 p-0 text-xs leading-none text-muted-foreground transition-colors hover:border-primary/20 hover:bg-background hover:text-foreground"
+                          aria-label={`移除标签 ${tag}`}
                           type="button"
                           onClick={() => onTagsChange(tags.filter((item) => item !== tag))}
                         >
@@ -124,12 +125,12 @@ export function ArticleComposer({
               </div>
             </div>
           </div>
-          <label className="grid gap-2">
+          <label className="flex flex-col gap-2">
             <span className="text-xs font-bold uppercase tracking-[0.08em] text-primary/80">原文</span>
             <Textarea
               className="min-h-[164px] leading-7"
-              value={sourceText}
-              onChange={(event) => onSourceTextChange(event.target.value)}
+              value={text}
+              onChange={(event) => onTextChange(event.target.value)}
               placeholder="在这里粘贴日语文章"
               rows={10}
             />

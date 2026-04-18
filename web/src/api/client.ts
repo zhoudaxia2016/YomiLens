@@ -104,9 +104,7 @@ export const api = {
       const json = (await res.json()) as ParseArticleResponse | ParseArticleError
       if (!res.ok) {
         const message = 'error' in json ? json.error : `HTTP ${res.status}`
-        const error = new Error(message) as Error & { rawModelOutput?: string }
-        error.rawModelOutput = 'rawModelOutput' in json ? json.rawModelOutput : undefined
-        throw error
+        throw new Error(message)
       }
 
       return json as ParseArticleResponse
@@ -153,6 +151,29 @@ export const api = {
     }
   },
 
+  async saveArticleTranslation(
+    id: string,
+    input: {
+      paragraphs: TranslateParagraphOutput[]
+      memory: Record<string, unknown>
+      provider: 'deepseek' | 'llama'
+      model: string
+    }
+  ) {
+    const res = await fetch(`/api/articles/${id}/translation`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(input),
+    })
+    const json = (await res.json()) as ArticleDetail | { error: string }
+    if (!res.ok) {
+      throw new Error('error' in json ? json.error : `HTTP ${res.status}`)
+    }
+    return json as ArticleDetail
+  },
+
   async getTranslateConfig() {
     const res = await fetch('/api/translate/config')
     const json = (await res.json()) as TranslateConfigResponse | { error: string }
@@ -162,8 +183,14 @@ export const api = {
     return json as TranslateConfigResponse
   },
 
-  async getTranslateModels() {
-    const res = await fetch('/api/translate/models')
+  async getTranslateModels(configId?: string) {
+    const search = new URLSearchParams()
+    if (configId) {
+      search.set('configId', configId)
+    }
+
+    const url = search.size > 0 ? `/api/translate/models?${search.toString()}` : '/api/translate/models'
+    const res = await fetch(url)
     const json = (await res.json()) as { models: string[]; provider: string; error?: string }
     if (json.error) {
       throw new Error(json.error)
