@@ -1,41 +1,37 @@
 import type { Client, InStatement } from "@libsql/client";
 import type { ParsedArticle } from "../lib/parser/index.ts";
+import type {
+  TranslateParagraphOutput,
+  TranslationMemory,
+  TranslationModelProvider,
+} from "../lib/translate/types.ts";
 import { getDbClient } from "./client.ts";
-
-export const PARSER_VERSION = "article-parse-v1";
-
-export type ArticleStatus = "draft" | "parsed";
 
 export type ArticleRecord = {
   id: string;
   title: string;
-  sourceText: string;
+  text: string;
   tags: string[];
-  sourceLocale: "ja-JP";
-  status: ArticleStatus;
-  latestParseId: string | null;
-  latestParseVersion: string | null;
-  paragraphCount: number;
-  sentenceCount: number;
-  tokenCount: number;
-  chunkCount: number;
+  latestProcessId: string | null;
   createdAt: string;
   updatedAt: string;
-  lastParsedAt: string | null;
 };
 
-export type ArticleParseRecord = {
+export type StoredArticleTranslation = {
+  paragraphs: TranslateParagraphOutput[];
+  memory: TranslationMemory | Record<string, never>;
+};
+
+export type ArticleProcessRecord = {
   id: string;
   articleId: string;
-  parserVersion: string;
-  sourceTextHash: string;
-  article: ParsedArticle;
-  rawModelOutput: string;
-  paragraphCount: number;
-  sentenceCount: number;
-  tokenCount: number;
-  chunkCount: number;
+  text: string;
+  parse: ParsedArticle | null;
+  translation: StoredArticleTranslation | null;
+  provider: TranslationModelProvider | null;
+  model: string | null;
   createdAt: string;
+  updatedAt: string;
 };
 
 export type ArticleListItem = {
@@ -45,74 +41,105 @@ export type ArticleListItem = {
 
 export type ArticleDetail = {
   article: ArticleRecord;
-  latestParse: ArticleParseRecord | null;
+  latestProcess: ArticleProcessRecord | null;
 };
-
-type ArticleStats = Pick<
-  ArticleRecord,
-  "paragraphCount" | "sentenceCount" | "tokenCount" | "chunkCount"
->;
 
 export type UpsertArticleInput = {
   title: string;
-  sourceText: string;
+  text: string;
   tags: string[];
 };
 
-function rowToArticle(row: Record<string, unknown>): ArticleRecord {
-  const tagsJson = String(row.tags_json ?? "[]");
-  const fallbackTag = String(row.tags ?? row.notes ?? "").trim();
-
-  return {
-    id: String(row.id),
-    title: String(row.title),
-    sourceText: String(row.source_text),
-    tags: parseTags(tagsJson, fallbackTag),
-    sourceLocale: "ja-JP",
-    status: String(row.status) === "parsed" ? "parsed" : "draft",
-    latestParseId: row.latest_parse_id ? String(row.latest_parse_id) : null,
-    latestParseVersion: row.latest_parse_version ? String(row.latest_parse_version) : null,
-    paragraphCount: Number(row.paragraph_count ?? 0),
-    sentenceCount: Number(row.sentence_count ?? 0),
-    tokenCount: Number(row.token_count ?? 0),
-    chunkCount: Number(row.chunk_count ?? 0),
-    createdAt: String(row.created_at),
-    updatedAt: String(row.updated_at),
-    lastParsedAt: row.last_parsed_at ? String(row.last_parsed_at) : null,
-  };
-}
-
-function rowToParse(row: Record<string, unknown>): ArticleParseRecord {
-  return {
-    id: String(row.id),
-    articleId: String(row.article_id),
-    parserVersion: String(row.parser_version),
-    sourceTextHash: String(row.source_text_hash),
-    article: JSON.parse(String(row.article_json)) as ParsedArticle,
-    rawModelOutput: String(row.raw_model_output),
-    paragraphCount: Number(row.paragraph_count ?? 0),
-    sentenceCount: Number(row.sentence_count ?? 0),
-    tokenCount: Number(row.token_count ?? 0),
-    chunkCount: Number(row.chunk_count ?? 0),
-    createdAt: String(row.created_at),
-  };
-}
+export type SaveArticleTranslationInput = {
+  paragraphs: TranslateParagraphOutput[];
+  memory: TranslationMemory | Record<string, never>;
+  provider: TranslationModelProvider;
+  model: string;
+};
 
 function getClient(client?: Client) {
   return client ?? getDbClient();
 }
 
+function parseTags(tagsJson: string) {
+  try {
+    const parsed = JSON.parse(tagsJson) as unknown;
+    if (Array.isArray(parsed)) {
+      return normalizeTags(parsed);
+    }
+  } catch {
+    // ignore malformed legacy data
+  }
+
+  return [];
+}
+
+function normalizeTags(tags: unknown[]) {
+  return Array.from(
+    new Set(
+      tags
+        .map((item) => String(item ?? "").trim())
+        .filter(Boolean),
+    ),
+  );
+}
+
+function rowToArticle(row: Record<string, unknown>): ArticleRecord {
+  return {
+    id: String(row.id),
+    title: String(row.title),
+    text: String(row.text ?? ""),
+    tags: parseTags(String(row.tags_json ?? "[]")),
+    latestProcessId: row.latest_process_id ? String(row.latest_process_id) : null,
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at),
+  };
+}
+
+function rowToProcess(row: Record<string, unknown>): ArticleProcessRecord {
+  return {
+    id: String(row.id),
+    articleId: String(row.article_id),
+    text: String(row.text ?? ""),
+    parse: row.parse_json ? JSON.parse(String(row.parse_json)) as ParsedArticle : null,
+    translation: row.translation_json
+      ? JSON.parse(String(row.translation_json)) as StoredArticleTranslation
+      : null,
+    provider: row.provider ? String(row.provider) as TranslationModelProvider : null,
+    model: row.model ? String(row.model) : null,
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at),
+  };
+}
+
+async function getReusableProcess(
+  articleId: string,
+  text: string,
+  client: Client,
+): Promise<ArticleProcessRecord | null> {
+  const res = await client.execute({
+    sql: `SELECT * FROM article_processes
+          WHERE article_id = ? AND text = ?
+          ORDER BY updated_at DESC
+          LIMIT 1`,
+    args: [articleId, text],
+  });
+
+  if (res.rows.length === 0) {
+    return null;
+  }
+
+  return rowToProcess(res.rows[0] as Record<string, unknown>);
+}
+
 export async function listArticles(client?: Client): Promise<ArticleListItem[]> {
   const db = getClient(client);
-  const res = await db.execute(`SELECT * FROM articles ORDER BY updated_at DESC`);
+  const res = await db.execute(`SELECT id, title FROM articles ORDER BY updated_at DESC`);
 
-  return res.rows.map((row) => {
-    const article = rowToArticle(row as Record<string, unknown>);
-    return {
-      id: article.id,
-      title: article.title,
-    };
-  });
+  return res.rows.map((row) => ({
+    id: String((row as Record<string, unknown>).id),
+    title: String((row as Record<string, unknown>).title),
+  }));
 }
 
 export async function getArticleDetail(
@@ -130,20 +157,20 @@ export async function getArticleDetail(
   }
 
   const article = rowToArticle(articleRes.rows[0] as Record<string, unknown>);
-  let latestParse: ArticleParseRecord | null = null;
+  let latestProcess: ArticleProcessRecord | null = null;
 
-  if (article.latestParseId) {
-    const parseRes = await db.execute({
-      sql: `SELECT * FROM article_parses WHERE id = ? AND article_id = ?`,
-      args: [article.latestParseId, articleId],
+  if (article.latestProcessId) {
+    const processRes = await db.execute({
+      sql: `SELECT * FROM article_processes WHERE id = ? AND article_id = ?`,
+      args: [article.latestProcessId, article.id],
     });
 
-    if (parseRes.rows.length > 0) {
-      latestParse = rowToParse(parseRes.rows[0] as Record<string, unknown>);
+    if (processRes.rows.length > 0) {
+      latestProcess = rowToProcess(processRes.rows[0] as Record<string, unknown>);
     }
   }
 
-  return { article, latestParse };
+  return { article, latestProcess };
 }
 
 export async function createArticle(
@@ -153,53 +180,26 @@ export async function createArticle(
   const db = getClient(client);
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
+  const tags = normalizeTags(input.tags);
 
   await db.execute({
     sql: `INSERT INTO articles (
-      id, title, source_text, tags, tags_json, source_locale, status,
-      latest_parse_id, latest_parse_version,
-      paragraph_count, sentence_count, token_count, chunk_count,
-      created_at, updated_at, last_parsed_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    args: [
-      id,
-      input.title,
-      input.sourceText,
-      input.tags.join(", "),
-      JSON.stringify(normalizeTags(input.tags)),
-      "ja-JP",
-      "draft",
-      null,
-      null,
-      0,
-      0,
-      0,
-      0,
-      now,
-      now,
-      null,
-    ],
+      id, title, text, tags_json, latest_process_id, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    args: [id, input.title, input.text, JSON.stringify(tags), null, now, now],
   });
 
   return {
     article: {
       id,
       title: input.title,
-      sourceText: input.sourceText,
-      tags: normalizeTags(input.tags),
-      sourceLocale: "ja-JP",
-      status: "draft",
-      latestParseId: null,
-      latestParseVersion: null,
-      paragraphCount: 0,
-      sentenceCount: 0,
-      tokenCount: 0,
-      chunkCount: 0,
+      text: input.text,
+      tags,
+      latestProcessId: null,
       createdAt: now,
       updatedAt: now,
-      lastParsedAt: null,
     },
-    latestParse: null,
+    latestProcess: null,
   };
 }
 
@@ -216,28 +216,19 @@ export async function updateArticle(
   }
 
   const now = new Date().toISOString();
-  const sourceChanged = existing.article.sourceText !== input.sourceText;
+  const tags = normalizeTags(input.tags);
+  const textChanged = existing.article.text !== input.text;
+
   await db.execute({
     sql: `UPDATE articles
-          SET title = ?, source_text = ?, tags = ?, tags_json = ?, updated_at = ?,
-              status = ?, latest_parse_id = ?, latest_parse_version = ?,
-              paragraph_count = ?, sentence_count = ?, token_count = ?, chunk_count = ?,
-              last_parsed_at = ?
+          SET title = ?, text = ?, tags_json = ?, latest_process_id = ?, updated_at = ?
           WHERE id = ?`,
     args: [
       input.title,
-      input.sourceText,
-      input.tags.join(", "),
-      JSON.stringify(normalizeTags(input.tags)),
+      input.text,
+      JSON.stringify(tags),
+      textChanged ? null : existing.article.latestProcessId,
       now,
-      sourceChanged ? "draft" : existing.article.status,
-      sourceChanged ? null : existing.article.latestParseId,
-      sourceChanged ? null : existing.article.latestParseVersion,
-      sourceChanged ? 0 : existing.article.paragraphCount,
-      sourceChanged ? 0 : existing.article.sentenceCount,
-      sourceChanged ? 0 : existing.article.tokenCount,
-      sourceChanged ? 0 : existing.article.chunkCount,
-      sourceChanged ? null : existing.article.lastParsedAt,
       articleId,
     ],
   });
@@ -248,7 +239,6 @@ export async function updateArticle(
 export async function saveArticleParse(
   articleId: string,
   parsedArticle: ParsedArticle,
-  rawModelOutput: string,
   client?: Client,
 ): Promise<ArticleDetail | null> {
   const db = getClient(client);
@@ -259,95 +249,101 @@ export async function saveArticleParse(
   }
 
   const now = new Date().toISOString();
-  const parseId = crypto.randomUUID();
-  const stats = summarizeArticle(parsedArticle);
-  const sourceTextHash = await hashText(existing.article.sourceText);
-  const statements: InStatement[] = [
-    {
-      sql: `INSERT INTO article_parses (
-        id, article_id, parser_version, source_text_hash, article_json, raw_model_output,
-        paragraph_count, sentence_count, token_count, chunk_count, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      args: [
-        parseId,
-        articleId,
-        PARSER_VERSION,
-        sourceTextHash,
-        JSON.stringify(parsedArticle),
-        rawModelOutput,
-        stats.paragraphCount,
-        stats.sentenceCount,
-        stats.tokenCount,
-        stats.chunkCount,
-        now,
-      ],
-    },
-    {
-      sql: `UPDATE articles
-            SET status = ?, latest_parse_id = ?, latest_parse_version = ?,
-                paragraph_count = ?, sentence_count = ?, token_count = ?, chunk_count = ?,
-                updated_at = ?, last_parsed_at = ?
+  const reusableProcess = await getReusableProcess(articleId, existing.article.text, db);
+  const processId = reusableProcess?.id ?? crypto.randomUUID();
+  const statements: InStatement[] = [];
+
+  if (reusableProcess) {
+    statements.push({
+      sql: `UPDATE article_processes
+            SET parse_json = ?, updated_at = ?
             WHERE id = ?`,
+      args: [JSON.stringify(parsedArticle), now, processId],
+    });
+  } else {
+    statements.push({
+      sql: `INSERT INTO article_processes (
+        id, article_id, text, parse_json, translation_json, provider, model, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
-        "parsed",
-        parseId,
-        PARSER_VERSION,
-        stats.paragraphCount,
-        stats.sentenceCount,
-        stats.tokenCount,
-        stats.chunkCount,
-        now,
-        now,
+        processId,
         articleId,
+        existing.article.text,
+        JSON.stringify(parsedArticle),
+        null,
+        null,
+        null,
+        now,
+        now,
       ],
-    },
-  ];
+    });
+  }
+
+  statements.push({
+    sql: `UPDATE articles
+          SET latest_process_id = ?, updated_at = ?
+          WHERE id = ?`,
+    args: [processId, now, articleId],
+  });
 
   await db.batch(statements, "write");
   return getArticleDetail(articleId, db);
 }
 
-export function summarizeArticle(article: ParsedArticle): ArticleStats {
-  return {
-    paragraphCount: article.paragraphs.length,
-    sentenceCount: article.paragraphs.reduce((sum, paragraph) => sum + paragraph.sentences.length, 0),
-    tokenCount: article.paragraphs.reduce(
-      (sum, paragraph) =>
-        sum + paragraph.sentences.reduce((inner, sentence) => inner + sentence.tokens.length, 0),
-      0,
-    ),
-    chunkCount: article.paragraphs.reduce(
-      (sum, paragraph) =>
-        sum + paragraph.sentences.reduce((inner, sentence) => inner + sentence.chunks.length, 0),
-      0,
-    ),
-  };
-}
+export async function saveArticleTranslation(
+  articleId: string,
+  input: SaveArticleTranslationInput,
+  client?: Client,
+): Promise<ArticleDetail | null> {
+  const db = getClient(client);
+  const existing = await getArticleDetail(articleId, db);
 
-async function hashText(text: string) {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
-  return Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
-function parseTags(tagsJson: string, fallbackTag: string) {
-  try {
-    const parsed = JSON.parse(tagsJson) as unknown;
-    if (Array.isArray(parsed)) {
-      return normalizeTags(parsed);
-    }
-  } catch {
-    // ignore malformed legacy data and fall back to the plain-text column.
+  if (!existing) {
+    return null;
   }
 
-  return fallbackTag ? [fallbackTag] : [];
-}
+  const now = new Date().toISOString();
+  const reusableProcess = await getReusableProcess(articleId, existing.article.text, db);
+  const processId = reusableProcess?.id ?? crypto.randomUUID();
+  const translation = {
+    paragraphs: input.paragraphs,
+    memory: input.memory,
+  };
+  const statements: InStatement[] = [];
 
-function normalizeTags(tags: unknown[]) {
-  return Array.from(
-    new Set(
-      tags
-        .map((tag) => String(tag).trim())
-        .filter(Boolean),
-    ),
-  );
+  if (reusableProcess) {
+    statements.push({
+      sql: `UPDATE article_processes
+            SET translation_json = ?, provider = ?, model = ?, updated_at = ?
+            WHERE id = ?`,
+      args: [JSON.stringify(translation), input.provider, input.model, now, processId],
+    });
+  } else {
+    statements.push({
+      sql: `INSERT INTO article_processes (
+        id, article_id, text, parse_json, translation_json, provider, model, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: [
+        processId,
+        articleId,
+        existing.article.text,
+        null,
+        JSON.stringify(translation),
+        input.provider,
+        input.model,
+        now,
+        now,
+      ],
+    });
+  }
+
+  statements.push({
+    sql: `UPDATE articles
+          SET latest_process_id = ?, updated_at = ?
+          WHERE id = ?`,
+    args: [processId, now, articleId],
+  });
+
+  await db.batch(statements, "write");
+  return getArticleDetail(articleId, db);
 }

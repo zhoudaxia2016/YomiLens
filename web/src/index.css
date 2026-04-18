@@ -96,6 +96,7 @@ a {
 
 button,
 textarea,
-input {
+input,
+select {
   font: inherit;
 }

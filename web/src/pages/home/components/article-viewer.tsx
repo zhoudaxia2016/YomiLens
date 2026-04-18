@@ -1,7 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import type { ArticleRecord, ParsedArticle, TranslateParagraphOutput } from '@/types'
 import { ChunkPopover } from './chunk-popover'
@@ -20,9 +19,7 @@ type ArticleViewerProps = {
   article: ParsedArticle | null
   selection: SelectionState
   translations: Map<number, TranslateParagraphOutput>
-  translating: boolean
   onSelectChunk: (payload: SelectionState) => void
-  onTranslate: () => void
 }
 
 export function ArticleViewer({ 
@@ -30,9 +27,7 @@ export function ArticleViewer({
   article, 
   selection, 
   translations, 
-  translating,
   onSelectChunk,
-  onTranslate 
 }: ArticleViewerProps) {
   const isInternalUpdate = useRef(false)
 
@@ -61,10 +56,13 @@ export function ArticleViewer({
   }, [selection, onSelectChunk])
 
   const statusLabel = currentArticle
-    ? currentArticle.status === 'parsed'
-      ? '已解析'
+    ? currentArticle.latestProcessId
+      ? '已处理'
       : '待解析'
     : null
+
+  const paragraphCount = article?.paragraphs.length ?? 0
+  const sentenceCount = article?.paragraphs.reduce((sum, paragraph) => sum + paragraph.sentences.length, 0) ?? 0
 
   const selectedContext =
     article && selection
@@ -88,25 +86,22 @@ export function ArticleViewer({
     <Card className="overflow-visible">
       <CardHeader className="mb-4 flex flex-col items-start justify-between gap-4 pb-0 sm:flex-row">
         <div>
-          <CardTitle className="text-2xl text-foreground">解析结果</CardTitle>
+          <CardTitle className="text-2xl text-foreground">解析与翻译</CardTitle>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
             {currentArticle
-              ? `${statusLabel} · ${currentArticle.paragraphCount} 段 / ${currentArticle.sentenceCount} 句`
+              ? `${statusLabel} · ${paragraphCount} 段 / ${sentenceCount} 句`
               : ''}
           </p>
         </div>
-        <Button className="py-1.5" onClick={onTranslate} disabled={translating || !article}>
-          {translating ? '翻译中…' : '翻译'}
-        </Button>
       </CardHeader>
       <CardContent className="pt-0">
         {!article ? (
           <Alert className="mb-4" variant="default">
             <AlertTitle>暂无解析结果</AlertTitle>
-            <AlertDescription>先保存文章，再执行解析。</AlertDescription>
+            <AlertDescription>在上方点击“解析”或“翻译”后，这里会显示解析和翻译结果。</AlertDescription>
           </Alert>
         ) : null}
-        <div className="grid gap-[18px]">
+        <div className="flex flex-col gap-[18px]">
           {article?.paragraphs.map((paragraph, paragraphIndex) => {
             const translation = translations.get(paragraphIndex)
             
