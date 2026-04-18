@@ -8,7 +8,7 @@ export function Input({ className, type = 'text', ...props }: InputProps) {
     <input
       type={type}
       className={cn(
-        'flex h-11 w-full rounded-2xl border border-slate-200 bg-white/90 px-4 py-2 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-amber-500',
+        'flex h-11 w-full rounded-2xl border border-input bg-background/90 px-4 py-2 text-sm text-foreground outline-none transition-[border-color,box-shadow,background-color] placeholder:text-muted-foreground focus:border-primary focus:bg-background focus:shadow-[0_0_0_3px_hsl(var(--brand-soft))]',
         className,
       )}
       {...props}

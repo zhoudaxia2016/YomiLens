@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react'
 import { api } from '@/api/client'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 import type {
   ArticleDetail,
   ArticleListItem,
@@ -9,7 +12,7 @@ import type {
 } from '@/types'
 import { ArticleComposer } from './components/article-composer'
 import { ArticleViewer } from './components/article-viewer'
-import { findInitialSelection, type SelectionState } from './utils'
+import type { SelectionState } from './utils'
 
 type ParseErrorState = {
   message: string
@@ -55,8 +58,22 @@ export function HomePage() {
     })
     setTranslations(new Map())
     setMemory(null)
-    setSelection(detail.latestParse ? findInitialSelection(detail.latestParse.article) : null)
+    setSelection(null)
   }, [detail])
+
+  useEffect(() => {
+    if (!status) {
+      return
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setStatus(null)
+    }, 2500)
+
+    return () => {
+      window.clearTimeout(timeoutId)
+    }
+  }, [status])
 
   async function loadArticles(nextSelectedId?: string) {
     try {
@@ -232,14 +249,22 @@ export function HomePage() {
   }
 
   return (
-    <section className="reader-layout">
-      <aside className="library-panel">
-        <div className="panel-head">
+    <section className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
+      {status ? (
+        <div className="pointer-events-none fixed right-6 top-6 z-50 w-[min(24rem,calc(100vw-3rem))]">
+          <Alert className="border-primary/15 bg-popover/95 shadow-[0_20px_50px_hsl(var(--panel-shadow)/0.16)] backdrop-blur" variant="success">
+            <AlertTitle>状态</AlertTitle>
+            <AlertDescription>{status}</AlertDescription>
+          </Alert>
+        </div>
+      ) : null}
+      <aside className="h-fit rounded-[28px] border border-sidebar-border bg-sidebar p-5 text-sidebar-foreground shadow-panel backdrop-blur-[14px] lg:sticky lg:top-6">
+        <div className="mb-4 flex items-start justify-between gap-4">
           <div>
-            <p className="section-kicker">文章</p>
+            <p className="m-0 text-xs font-bold uppercase tracking-[0.14em] text-primary/80">文章</p>
           </div>
-          <button
-            className="new-article-button"
+          <Button
+            className="py-2 text-sm"
             type="button"
             onClick={() => {
               setSelectedId(null)
@@ -254,23 +279,31 @@ export function HomePage() {
             }}
           >
             新建
-          </button>
+          </Button>
         </div>
-        <div className="library-list">
+        <div className="grid gap-0.5">
           {articles.map((item) => (
-            <button
+            <Button
               key={item.id}
-              className={['library-row', selectedId === item.id ? 'library-row-active' : ''].join(' ')}
+              className={cn(
+                'relative min-h-11 justify-start rounded-2xl border border-transparent bg-transparent pl-5 pr-3 py-2.5 text-left text-sidebar-foreground shadow-none before:absolute before:left-1.5 before:top-1/2 before:h-5 before:w-[3px] before:-translate-y-1/2 before:rounded-full before:bg-primary before:opacity-0 hover:text-primary',
+                item.title === '未命名文章' && 'text-muted-foreground',
+                selectedId === item.id
+                  ? 'font-semibold text-foreground before:opacity-100'
+                  : '',
+              )}
               type="button"
               onClick={() => void loadArticle(item.id)}
             >
-              <span className="library-title">{item.title}</span>
-            </button>
+              <span className="truncate text-sm font-semibold">{item.title}</span>
+            </Button>
           ))}
-          {articles.length === 0 ? <div className="empty-library">数据库里还没有文章，先新建一篇。</div> : null}
+          {articles.length === 0 ? (
+            <div className="px-1 pt-3 text-sm leading-6 text-muted-foreground">数据库里还没有文章，先新建一篇。</div>
+          ) : null}
         </div>
       </aside>
-      <section className="reader-main">
+      <section className="grid gap-6">
         <ArticleComposer
           article={detail?.article ?? null}
           title={editor.title}
@@ -279,7 +312,6 @@ export function HomePage() {
           saving={saving}
           parsing={parsing}
           errorMessage={error?.message ?? null}
-          statusMessage={status}
           onSubmit={handleSubmit}
           onParse={handleParse}
           onTitleChange={(value) => setEditor((current) => ({ ...current, title: value }))}
