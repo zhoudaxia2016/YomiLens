@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils'
 import type {
   ArticleDetail,
   ArticleListItem,
+  TranslateConfigResponse,
   TranslationMemory,
   TranslateParagraphOutput,
   UpsertArticleInput,
@@ -20,6 +21,7 @@ type ParseErrorState = {
 
 type TranslationState = Map<number, TranslateParagraphOutput>
 type EditorState = UpsertArticleInput
+const TRANSLATION_CONFIG_ID_STORAGE_KEY = 'yomilens.translation-config-id'
 
 export function HomePage() {
   const [articles, setArticles] = useState<ArticleListItem[]>([])
@@ -38,9 +40,17 @@ export function HomePage() {
   const [translations, setTranslations] = useState<TranslationState>(new Map())
   const [memory, setMemory] = useState<TranslationMemory | null>(null)
   const [translating, setTranslating] = useState(false)
+  const [translateConfig, setTranslateConfig] = useState<TranslateConfigResponse | null>(null)
+  const [selectedTranslateConfigId, setSelectedTranslateConfigId] = useState<string>(() => {
+    if (typeof window === 'undefined') {
+      return ''
+    }
+    return window.localStorage.getItem(TRANSLATION_CONFIG_ID_STORAGE_KEY) ?? ''
+  })
 
   useEffect(() => {
     void loadArticles()
+    void loadTranslateConfig()
   }, [])
 
   useEffect(() => {
@@ -75,6 +85,25 @@ export function HomePage() {
     }
   }, [status])
 
+  useEffect(() => {
+    if (!selectedTranslateConfigId) {
+      return
+    }
+
+    window.localStorage.setItem(TRANSLATION_CONFIG_ID_STORAGE_KEY, selectedTranslateConfigId)
+  }, [selectedTranslateConfigId])
+
+  useEffect(() => {
+    if (!translateConfig) {
+      return
+    }
+
+    const hasSelection = translateConfig.configs.some((item) => item.id === selectedTranslateConfigId)
+    if (!hasSelection) {
+      setSelectedTranslateConfigId(translateConfig.defaultConfigId)
+    }
+  }, [translateConfig, selectedTranslateConfigId])
+
   async function loadArticles(nextSelectedId?: string) {
     try {
       const result = await api.listArticles()
@@ -101,6 +130,16 @@ export function HomePage() {
       setError(null)
     } catch (err) {
       const message = err instanceof Error ? err.message : '加载文章详情失败'
+      setError({ message })
+    }
+  }
+
+  async function loadTranslateConfig() {
+    try {
+      const result = await api.getTranslateConfig()
+      setTranslateConfig(result)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : '加载翻译模型配置失败'
       setError({ message })
     }
   }
@@ -204,6 +243,7 @@ export function HomePage() {
               text: sentence.originalText,
             })),
           },
+          configId: selectedTranslateConfigId || translateConfig?.defaultConfigId,
         })
 
         console.log(`[Frontend] Paragraph ${i} translated successfully`)
@@ -302,6 +342,28 @@ export function HomePage() {
             <div className="px-1 pt-3 text-sm leading-6 text-muted-foreground">数据库里还没有文章，先新建一篇。</div>
           ) : null}
         </div>
+        {translateConfig ? (
+          <div className="mt-6 grid gap-3 border-t border-sidebar-border/80 pt-4">
+            <div>
+              <p className="m-0 text-xs font-bold uppercase tracking-[0.14em] text-primary/80">翻译模型</p>
+              <p className="mt-1 text-sm leading-5 text-muted-foreground">由服务端提供可选 provider 和 model，前端只负责切换。</p>
+            </div>
+            <label className="grid gap-1.5">
+              <span className="text-xs font-bold uppercase tracking-[0.08em] text-primary/80">当前模型</span>
+              <select
+                className="h-11 rounded-2xl border border-input bg-background/90 px-4 text-sm text-foreground outline-none transition-[border-color,box-shadow,background-color] focus:border-primary focus:bg-background focus:shadow-[0_0_0_3px_hsl(var(--brand-soft))]"
+                value={selectedTranslateConfigId || translateConfig.defaultConfigId}
+                onChange={(event) => setSelectedTranslateConfigId(event.target.value)}
+              >
+                {translateConfig.configs.map((item) => (
+                  <option value={item.id} key={item.id}>
+                    {item.label} · {item.provider} / {item.model}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        ) : null}
       </aside>
       <section className="grid gap-6">
         <ArticleComposer
