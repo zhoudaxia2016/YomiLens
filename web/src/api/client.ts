@@ -161,4 +161,13 @@ export const api = {
     }
     return json as TranslateConfigResponse
   },
+
+  async getTranslateModels() {
+    const res = await fetch('/api/translate/models')
+    const json = (await res.json()) as { models: string[]; provider: string; error?: string }
+    if (json.error) {
+      throw new Error(json.error)
+    }
+    return json as { models: string[]; provider: string }
+  },
 }

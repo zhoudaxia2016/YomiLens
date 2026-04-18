@@ -200,6 +200,7 @@ export type TranslateParagraphInput = {
     sentences: TranslationSentence[];
   };
   configId?: string;
+  model?: string;
 };
 
 export type TranslateParagraphOutput = {

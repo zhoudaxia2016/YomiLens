@@ -3,97 +3,140 @@ import { translateParagraph } from "../lib/translate/index.ts";
 import type {
   TranslateConfigResponse,
   TranslationModelConfig,
+  TranslationModelProvider,
   TranslateParagraphInput,
 } from "../lib/translate/types.ts";
 
 export const translateRouter = new Hono();
 
-function buildDefaultTranslationConfig(): TranslationModelConfig {
-  const providerEnv = (Deno.env.get("TRANSLATION_PROVIDER") || "deepseek").trim().toLowerCase();
-  const provider = providerEnv === "llama" ? "llama" : "deepseek";
-  return {
-    id: "default",
-    label: provider === "llama" ? "本地 Llama" : "DeepSeek",
-    provider,
-    baseUrl:
-      Deno.env.get("TRANSLATION_BASE_URL") ||
-      (provider === "llama" ? "http://127.0.0.1:11434/v1" : "https://api.deepseek.com/v1"),
-    model:
-      Deno.env.get("TRANSLATION_MODEL") ||
-      (provider === "llama" ? "llama3.1:8b" : "deepseek-chat"),
-    apiKey:
-      Deno.env.get("TRANSLATION_API_KEY") ||
-      (provider === "deepseek" ? Deno.env.get("DEEPSEEK_API_KEY") || undefined : undefined),
-  };
+type ProviderConfig = {
+  apiKey?: string;
+  baseUrl?: string;
+};
+
+function getProviderConfig(provider: TranslationModelProvider): ProviderConfig {
+  switch (provider) {
+    case "deepseek":
+      return {
+        apiKey: Deno.env.get("DEEPSEEK_API_KEY"),
+        baseUrl: Deno.env.get("DEEPSEEK_BASE_URL"),
+      };
+    case "llama":
+      return {
+        apiKey: Deno.env.get("LLAMA_API_KEY"),
+        baseUrl: Deno.env.get("LLAMA_BASE_URL"),
+      };
+    default:
+      return {};
+  }
 }
 
 function loadTranslationConfigs(): { defaultConfigId: string; configs: TranslationModelConfig[] } {
-  const fallback = buildDefaultTranslationConfig();
   const raw = Deno.env.get("TRANSLATION_CONFIGS_JSON");
-
-  if (!raw) {
-    return {
-      defaultConfigId: fallback.id,
-      configs: [fallback],
-    };
-  }
-
-  try {
-    const parsed = JSON.parse(raw) as {
-      defaultConfigId?: string;
-      configs?: Array<Partial<TranslationModelConfig>>;
-    };
-
-    const configs = (parsed.configs ?? [])
-      .map((item, index) => {
-        const provider = item.provider === "llama" ? "llama" : "deepseek";
-        const id = typeof item.id === "string" && item.id.trim() ? item.id.trim() : `config-${index + 1}`;
-        const model = typeof item.model === "string" ? item.model.trim() : "";
-        const baseUrl = typeof item.baseUrl === "string" ? item.baseUrl.trim() : "";
-        if (!model || !baseUrl) {
-          return null;
-        }
-
-        return {
-          id,
-          label:
-            typeof item.label === "string" && item.label.trim()
-              ? item.label.trim()
-              : `${provider}:${model}`,
-          provider,
-          baseUrl,
-          model,
-          apiKey: typeof item.apiKey === "string" && item.apiKey.trim() ? item.apiKey.trim() : undefined,
-        } satisfies TranslationModelConfig;
-      })
-      .filter((item): item is TranslationModelConfig => item !== null);
-
-    if (configs.length === 0) {
-      return {
-        defaultConfigId: fallback.id,
-        configs: [fallback],
+  
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as {
+        defaultConfigId?: string;
+        configs?: Array<{
+          id?: string;
+          label?: string;
+          provider?: string;
+          baseUrl?: string;
+          model?: string;
+          apiKey?: string;
+        }>;
       };
+
+      const configs = (parsed.configs ?? [])
+        .map((item, index): TranslationModelConfig | null => {
+          const provider = (item.provider === "llama" ? "llama" : "deepseek") as TranslationModelProvider;
+          const providerConfig = getProviderConfig(provider);
+          const id = item.id?.trim() || `config-${index + 1}`;
+          const baseUrl = item.baseUrl?.trim() || providerConfig.baseUrl;
+          const model = item.model?.trim();
+
+          if (!baseUrl) return null;
+
+          return {
+            id,
+            label: item.label?.trim() || `${provider}`,
+            provider,
+            baseUrl,
+            model: model || "",
+            apiKey: item.apiKey?.trim() || providerConfig.apiKey,
+          };
+        })
+        .filter((item): item is TranslationModelConfig => item !== null);
+
+      if (configs.length > 0) {
+        return {
+          defaultConfigId: parsed.defaultConfigId || configs[0].id,
+          configs,
+        };
+      }
+    } catch (error) {
+      console.error(`[Translate Route] Failed to parse TRANSLATION_CONFIGS_JSON: ${error}`);
     }
-
-    const defaultConfigId =
-      typeof parsed.defaultConfigId === "string" && configs.some((item) => item.id === parsed.defaultConfigId)
-        ? parsed.defaultConfigId
-        : configs[0].id;
-
-    return { defaultConfigId, configs };
-  } catch (error) {
-    console.error(`[Translate Route] Failed to parse TRANSLATION_CONFIGS_JSON: ${error}`);
-    return {
-      defaultConfigId: fallback.id,
-      configs: [fallback],
-    };
   }
+
+  // 自动检测可用的 provider
+  const configs: TranslationModelConfig[] = [];
+
+  // 检测 Llama (本地)
+  const llamaBaseUrl = Deno.env.get("LLAMA_BASE_URL");
+  if (llamaBaseUrl) {
+    configs.push({
+      id: "llama",
+      label: "本地 Llama",
+      provider: "llama",
+      baseUrl: llamaBaseUrl,
+      model: "",
+      apiKey: Deno.env.get("LLAMA_API_KEY"),
+    });
+  }
+
+  // 检测 DeepSeek
+  const deepseekApiKey = Deno.env.get("DEEPSEEK_API_KEY");
+  const deepseekBaseUrl = Deno.env.get("DEEPSEEK_BASE_URL");
+  if (deepseekApiKey) {
+    configs.push({
+      id: "deepseek",
+      label: "DeepSeek",
+      provider: "deepseek",
+      baseUrl: deepseekBaseUrl || "https://api.deepseek.com/v1",
+      model: "",
+      apiKey: deepseekApiKey,
+    });
+  }
+
+  if (configs.length === 0) {
+    // 默认配置
+    configs.push({
+      id: "default",
+      label: "DeepSeek (默认)",
+      provider: "deepseek",
+      baseUrl: "https://api.deepseek.com/v1",
+      model: "",
+      apiKey: undefined,
+    });
+  }
+
+  return {
+    defaultConfigId: configs[0].id,
+    configs,
+  };
 }
 
 function resolveTranslationConfig(payload: TranslateParagraphInput): TranslationModelConfig {
   const { defaultConfigId, configs } = loadTranslationConfigs();
   const targetId = payload.configId?.trim() || defaultConfigId;
-  return configs.find((item) => item.id === targetId) ?? configs[0];
+  const baseConfig = configs.find((item) => item.id === targetId) ?? configs[0];
+
+  return {
+    ...baseConfig,
+    model: payload.model || baseConfig.model,
+  };
 }
 
 translateRouter.get("/config", (c) => {
@@ -111,6 +154,53 @@ translateRouter.get("/config", (c) => {
   return c.json(response);
 });
 
+translateRouter.get("/models", async (c) => {
+  const { configs } = loadTranslationConfigs();
+  const config = configs[0];
+
+  if (!config?.baseUrl) {
+    return c.json({ error: "未配置 Base URL" }, 400);
+  }
+
+  // DeepSeek 不支持 /api/tags，返回预设模型列表
+  if (config.provider === "deepseek") {
+    return c.json({
+      models: ["deepseek-chat", "deepseek-coder"],
+      provider: config.provider,
+    });
+  }
+
+  // Ollama/Llama 使用 /api/tags
+  try {
+    const modelsUrl = config.baseUrl.replace(/\/+$/, "").replace(/\/v1$/, "");
+    
+    const response = await fetch(`${modelsUrl}/api/tags`, {
+      headers: config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {},
+    });
+
+    if (!response.ok) {
+      return c.json({ 
+        error: `获取模型列表失败: ${response.status}`,
+        models: [],
+        provider: config.provider,
+      });
+    }
+
+    const data = await response.json();
+    const models = data.models?.map((m: { name: string }) => m.name) || [];
+    
+    return c.json({ models, provider: config.provider });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "获取模型列表失败";
+    console.error(`[Translate Route] Failed to get models: ${message}`);
+    return c.json({ 
+      error: `无法连接到 ${config.baseUrl}，请确认服务是否运行`,
+      models: [],
+      provider: config.provider,
+    });
+  }
+});
+
 translateRouter.post("/paragraph", async (c) => {
   let payload: TranslateParagraphInput;
   try {
@@ -126,15 +216,15 @@ translateRouter.post("/paragraph", async (c) => {
   const config = resolveTranslationConfig(payload);
 
   if (!config.baseUrl) {
-    return c.json({ error: "请提供翻译模型的 Base URL" }, 400);
+    return c.json({ error: "请配置 Base URL" }, 400);
   }
 
   if (!config.model) {
-    return c.json({ error: "请提供翻译模型名称" }, 400);
+    return c.json({ error: "请提供模型名称" }, 400);
   }
 
   if (config.provider === "deepseek" && !config.apiKey) {
-    return c.json({ error: "DeepSeek 需要提供 API Key" }, 400);
+    return c.json({ error: "DeepSeek 需要配置 API Key" }, 400);
   }
 
   try {
