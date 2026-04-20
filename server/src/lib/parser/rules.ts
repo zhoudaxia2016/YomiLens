@@ -340,6 +340,7 @@ export function shouldStartChunk(current: Token, previous: Token | undefined): b
   const previousRawPos = previous?.posDetail[0] ?? "";
   const previousRawPos1 = previous?.posDetail[1] ?? "";
 
+  if (rawPos === "記号" && rawPos1 === "括弧開") return true;
   if (!JPHRASE_BOUNDARY_BASE_POS.has(rawPos)) return false;
   if (rawPos === "名詞" && rawPos1.includes("接尾")) return false;
   if (previousRawPos === "接頭詞") return false;

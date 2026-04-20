@@ -570,7 +570,7 @@ export function HomePage() {
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-9 w-9 shrink-0 rounded-xl text-muted-foreground opacity-0 transition-opacity hover:bg-transparent hover:text-destructive focus-visible:bg-transparent focus-visible:text-destructive group-hover:opacity-100"
+                className="invisible h-9 w-9 shrink-0 rounded-xl text-muted-foreground opacity-0 transition-[opacity,visibility] hover:bg-transparent hover:text-destructive focus-visible:visible focus-visible:bg-transparent focus-visible:text-destructive focus-visible:opacity-100 group-hover:visible group-hover:opacity-100"
                 type="button"
                 aria-label={`删除${item.title}`}
                 disabled={saving || parsing || translating || deleting}
