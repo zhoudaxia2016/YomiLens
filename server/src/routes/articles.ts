@@ -56,6 +56,16 @@ function getNormalizedArticleUpdate(
 
 export const articlesRouter = new Hono();
 
+const ANSI = {
+  reset: "\x1b[0m",
+  yellow: "\x1b[33m",
+  magenta: "\x1b[35m",
+} as const;
+
+function colorize(color: string, text: string): string {
+  return `${color}${text}${ANSI.reset}`;
+}
+
 articlesRouter.get("/", async (c) => {
   const articles = await listArticles();
   return c.json({ articles });
@@ -238,6 +248,8 @@ articlesRouter.post("/:id/translate", async (c) => {
         const paragraphs = parsedArticle?.paragraphs ?? [];
         const translatedParagraphs: TranslateParagraphOutput[] = [];
         let currentMemory: TranslationMemory | Record<string, never> = {};
+        let totalPromptMs = 0;
+        let totalPredictedMs = 0;
 
         controller.enqueue(encoder.encode(streamEvent({
           type: "start",
@@ -274,6 +286,8 @@ articlesRouter.post("/:id/translate", async (c) => {
 
             translatedParagraphs.push(result);
             currentMemory = result.memory;
+            totalPromptMs += result.metrics?.promptMs ?? 0;
+            totalPredictedMs += result.metrics?.predictedMs ?? 0;
 
             controller.enqueue(encoder.encode(streamEvent({
               type: "paragraph",
@@ -291,6 +305,10 @@ articlesRouter.post("/:id/translate", async (c) => {
             provider: payload.provider,
             model: config.model,
           });
+
+          console.log(
+            `[Translate Total] prompt_ms=${colorize(ANSI.yellow, totalPromptMs.toFixed(2))}, predicted_ms=${colorize(ANSI.yellow, totalPredictedMs.toFixed(2))}, total_ms=${colorize(ANSI.magenta, (totalPromptMs + totalPredictedMs).toFixed(2))}`
+          );
 
           controller.enqueue(encoder.encode(streamEvent({
             type: "complete",

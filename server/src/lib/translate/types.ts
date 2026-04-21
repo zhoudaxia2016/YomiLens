@@ -58,6 +58,10 @@ export type TranslateParagraphOutput = {
     }>
   }>
   memory: TranslationMemory
+  metrics?: {
+    promptMs?: number
+    predictedMs?: number
+  }
 }
 
 export type StoredTranslatedParagraph = {

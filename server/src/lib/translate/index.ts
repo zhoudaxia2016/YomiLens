@@ -24,6 +24,41 @@ const SYSTEM_PROMPT = `你是日语翻译助手。翻译日语段落，维护上
 <t jp="人名" cn="中文译名"/>
 </terms>`;
 
+type LlmResponse = {
+  choices?: Array<{
+    message?: {
+      content?: string;
+    };
+  }>;
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
+  };
+  timings?: {
+    prompt_n?: number;
+    prompt_ms?: number;
+    prompt_per_second?: number;
+    predicted_n?: number;
+    predicted_ms?: number;
+    predicted_per_second?: number;
+  };
+  prompt_n?: number;
+  prompt_ms?: number;
+  prompt_per_second?: number;
+  predicted_n?: number;
+  predicted_ms?: number;
+  predicted_per_second?: number;
+};
+
+const ANSI = {
+  reset: "\x1b[0m",
+  cyan: "\x1b[36m",
+  yellow: "\x1b[33m",
+  green: "\x1b[32m",
+  magenta: "\x1b[35m",
+} as const;
+
 function parseXML(content: string, tag: string): string {
   const match = content.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i"));
   return match?.[1]?.trim() ?? "";
@@ -52,6 +87,41 @@ function parseTerms(content: string): Array<{ japanese: string; chinese: string 
     }
   }
   return terms;
+}
+
+function formatMetric(value: number | undefined, fractionDigits = 2): string {
+  return typeof value === "number" && Number.isFinite(value)
+    ? value.toFixed(fractionDigits)
+    : "n/a";
+}
+
+function colorize(color: string, text: string): string {
+  return `${color}${text}${ANSI.reset}`;
+}
+
+function formatMetricField(label: string, value: string, color: string): string {
+  return `${label}=${colorize(color, value)}`;
+}
+
+function getTokenMetrics(data: LlmResponse) {
+  const promptTokens = data.usage?.prompt_tokens ?? data.timings?.prompt_n ?? data.prompt_n;
+  const completionTokens = data.usage?.completion_tokens ?? data.timings?.predicted_n ?? data.predicted_n;
+  const totalTokens = data.usage?.total_tokens ??
+    (typeof promptTokens === "number" && typeof completionTokens === "number"
+      ? promptTokens + completionTokens
+      : undefined);
+  const predictedPerSecond = data.timings?.predicted_per_second ?? data.predicted_per_second;
+  const promptMs = data.timings?.prompt_ms ?? data.prompt_ms;
+  const predictedMs = data.timings?.predicted_ms ?? data.predicted_ms;
+
+  return {
+    promptTokens,
+    completionTokens,
+    totalTokens,
+    predictedPerSecond,
+    promptMs,
+    predictedMs,
+  };
 }
 
 export async function translateParagraph(
@@ -114,13 +184,24 @@ ${termsText}`;
     throw new Error(`${config.provider} API error: ${response.status} - ${errorText}`);
   }
 
-  const data = await response.json();
+  const data = await response.json() as LlmResponse;
   const content = data.choices?.[0]?.message?.content;
-  const usage = data.usage;
+  const metrics = getTokenMetrics(data);
 
   const elapsed = Date.now() - startTime;
   console.log(`\n[Response] ${elapsed}ms`);
-  console.log(`[Usage] prompt=${usage?.prompt_tokens}, completion=${usage?.completion_tokens}, total=${usage?.total_tokens}`);
+  console.log(
+    `[Metrics] ${
+      [
+        formatMetricField("prompt_tokens", String(metrics.promptTokens ?? "n/a"), ANSI.cyan),
+        formatMetricField("completion_tokens", String(metrics.completionTokens ?? "n/a"), ANSI.cyan),
+        formatMetricField("total_tokens", String(metrics.totalTokens ?? "n/a"), ANSI.cyan),
+        formatMetricField("prompt_ms", formatMetric(metrics.promptMs), ANSI.yellow),
+        formatMetricField("predicted_ms", formatMetric(metrics.predictedMs), ANSI.yellow),
+        formatMetricField("predicted_per_second", formatMetric(metrics.predictedPerSecond), ANSI.green),
+      ].join(", ")
+    }`
+  );
 
   if (!content) {
     throw new Error(`${config.provider} API returned empty response`);
@@ -148,6 +229,10 @@ ${termsText}`;
         characters: [],
         terms,
         tone: "",
+      },
+      metrics: {
+        promptMs: metrics.promptMs,
+        predictedMs: metrics.predictedMs,
       },
     };
 
