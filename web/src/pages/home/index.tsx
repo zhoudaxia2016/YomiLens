@@ -22,12 +22,11 @@ import {
 import { cn } from '@/lib/utils'
 import type {
   ArticleDetail,
+  ArticleRecord,
   ArticleListItem,
   ParsedArticle,
+  StoredTranslatedParagraph,
   TranslateConfigResponse,
-  TranslationMemory,
-  TranslationModelProvider,
-  TranslateParagraphOutput,
   UpsertArticleInput,
 } from '@/types'
 import { ArticleComposer } from './components/article-composer'
@@ -38,13 +37,17 @@ type ParseErrorState = {
   message: string
 } | null;
 
-type TranslationState = Map<number, TranslateParagraphOutput>
+type TranslationState = Map<number, StoredTranslatedParagraph>
 type EditorState = UpsertArticleInput
-const TRANSLATION_CONFIG_ID_STORAGE_KEY = 'yomilens.translation-config-id'
+type TranslateProgressState = {
+  completed: number
+  total: number
+} | null
+const TRANSLATION_PROVIDER_STORAGE_KEY = 'yomilens.translation-provider'
 const TRANSLATION_MODEL_STORAGE_KEY_PREFIX = 'yomilens.translation-model'
 
-function getModelStorageKey(configId: string) {
-  return `${TRANSLATION_MODEL_STORAGE_KEY_PREFIX}.${configId}`
+function getModelStorageKey(provider: string) {
+  return `${TRANSLATION_MODEL_STORAGE_KEY_PREFIX}.${provider}`
 }
 
 function getTranslationsFromDetail(detail: ArticleDetail | null): TranslationState {
@@ -52,10 +55,17 @@ function getTranslationsFromDetail(detail: ArticleDetail | null): TranslationSta
   return new Map(paragraphs.map((item, index) => [index, item]))
 }
 
+function createStreamingTranslation(sentences: string[]): StoredTranslatedParagraph {
+  return {
+    sentences,
+  }
+}
+
 export function HomePage() {
   const [articles, setArticles] = useState<ArticleListItem[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [detail, setDetail] = useState<ArticleDetail | null>(null)
+  const [currentArticle, setCurrentArticle] = useState<ArticleRecord | null>(null)
+  const [parsedArticle, setParsedArticle] = useState<ParsedArticle | null>(null)
   const [editor, setEditor] = useState<EditorState>({
     title: '',
     text: '',
@@ -70,24 +80,25 @@ export function HomePage() {
   const [selection, setSelection] = useState<SelectionState>(null)
   const [translations, setTranslations] = useState<TranslationState>(new Map())
   const [translating, setTranslating] = useState(false)
+  const [translateProgress, setTranslateProgress] = useState<TranslateProgressState>(null)
   const [translateConfig, setTranslateConfig] = useState<TranslateConfigResponse | null>(null)
-  const [selectedTranslateConfigId, setSelectedTranslateConfigId] = useState<string>(() => {
+  const [selectedTranslateProvider, setSelectedTranslateProvider] = useState<string>(() => {
     if (typeof window === 'undefined') {
       return ''
     }
-    return window.localStorage.getItem(TRANSLATION_CONFIG_ID_STORAGE_KEY) ?? ''
+    return window.localStorage.getItem(TRANSLATION_PROVIDER_STORAGE_KEY) ?? ''
   })
   const [availableModels, setAvailableModels] = useState<string[]>([])
   const [selectedModel, setSelectedModel] = useState<string>(() => {
     if (typeof window === 'undefined') {
       return ''
     }
-    const selectedConfigId = window.localStorage.getItem(TRANSLATION_CONFIG_ID_STORAGE_KEY) ?? ''
-    return selectedConfigId ? window.localStorage.getItem(getModelStorageKey(selectedConfigId)) ?? '' : ''
+    const selectedProvider = window.localStorage.getItem(TRANSLATION_PROVIDER_STORAGE_KEY) ?? ''
+    return selectedProvider ? window.localStorage.getItem(getModelStorageKey(selectedProvider)) ?? '' : ''
   })
   const [loadingModels, setLoadingModels] = useState(false)
-  const activeConfigId = selectedTranslateConfigId || translateConfig?.defaultConfigId || ''
-  const lastDetailKeyRef = useRef<string>('')
+  const activeProvider = selectedTranslateProvider || translateConfig?.providers[0]?.provider || ''
+  const lastArticleKeyRef = useRef<string>('')
 
   useEffect(() => {
     void loadArticles()
@@ -95,35 +106,63 @@ export function HomePage() {
   }, [])
 
   useEffect(() => {
-    if (!detail) {
-      lastDetailKeyRef.current = ''
+    if (!currentArticle) {
+      lastArticleKeyRef.current = ''
       setSelection(null)
-      setTranslations(new Map())
       return
     }
 
-    const nextDetailKey = [
-      detail.article.id,
-      detail.article.updatedAt,
-      detail.latestProcess?.id ?? 'no-process',
-      detail.latestProcess?.updatedAt ?? 'no-process-update',
+    const nextArticleKey = [
+      currentArticle.id,
+      currentArticle.updatedAt,
     ].join(':')
-    const previousDetailKey = lastDetailKeyRef.current
-    const articleChanged = !previousDetailKey || previousDetailKey !== nextDetailKey
+    const previousArticleKey = lastArticleKeyRef.current
+    const articleChanged = !previousArticleKey || previousArticleKey !== nextArticleKey
 
     setEditor({
-      title: detail.article.title,
-      text: detail.article.text,
-      tags: detail.article.tags,
+      title: currentArticle.title,
+      text: currentArticle.text,
+      tags: currentArticle.tags,
     })
 
     if (articleChanged) {
-      setTranslations(getTranslationsFromDetail(detail))
       setSelection(null)
     }
 
-    lastDetailKeyRef.current = nextDetailKey
-  }, [detail])
+    lastArticleKeyRef.current = nextArticleKey
+  }, [currentArticle])
+
+  function applyDetail(nextDetail: ArticleDetail | null) {
+    setCurrentArticle(nextDetail?.article ?? null)
+    setParsedArticle(nextDetail?.latestProcess?.parse ?? null)
+    setTranslations(getTranslationsFromDetail(nextDetail))
+    setSelection(null)
+  }
+
+  function upsertArticleListItem(id: string, title: string) {
+    setArticles((current) => {
+      const existingIndex = current.findIndex((item) => item.id === id)
+      if (existingIndex === -1) {
+        return [{ id, title }, ...current]
+      }
+
+      const next = [...current]
+      next[existingIndex] = { ...next[existingIndex], title }
+      return next
+    })
+  }
+
+  function applyLocalArticleDraft(id: string, payload: UpsertArticleInput) {
+    setCurrentArticle((current) => current && current.id === id
+      ? {
+          ...current,
+          title: payload.title,
+          text: payload.text,
+          tags: payload.tags,
+        }
+      : current)
+    upsertArticleListItem(id, payload.title)
+  }
 
   useEffect(() => {
     if (!status) {
@@ -140,31 +179,31 @@ export function HomePage() {
   }, [status])
 
   useEffect(() => {
-    if (!selectedTranslateConfigId) {
+    if (!selectedTranslateProvider) {
       return
     }
 
-    window.localStorage.setItem(TRANSLATION_CONFIG_ID_STORAGE_KEY, selectedTranslateConfigId)
-  }, [selectedTranslateConfigId])
+    window.localStorage.setItem(TRANSLATION_PROVIDER_STORAGE_KEY, selectedTranslateProvider)
+  }, [selectedTranslateProvider])
 
   useEffect(() => {
     if (!translateConfig) {
       return
     }
 
-    const hasSelection = translateConfig.configs.some((item) => item.id === selectedTranslateConfigId)
+    const hasSelection = translateConfig.providers.some((item) => item.provider === selectedTranslateProvider)
     if (!hasSelection) {
-      setSelectedTranslateConfigId(translateConfig.defaultConfigId)
+      setSelectedTranslateProvider(translateConfig.providers[0]?.provider ?? '')
     }
-  }, [translateConfig, selectedTranslateConfigId])
+  }, [translateConfig, selectedTranslateProvider])
 
   useEffect(() => {
     if (!translateConfig) {
       return
     }
 
-    const configId = selectedTranslateConfigId || translateConfig.defaultConfigId
-    const currentConfig = translateConfig.configs.find((item) => item.id === configId)
+    const provider = selectedTranslateProvider || translateConfig.providers[0]?.provider || ''
+    const currentConfig = translateConfig.providers.find((item) => item.provider === provider)
 
     setAvailableModels([])
     if (typeof window === 'undefined') {
@@ -172,30 +211,30 @@ export function HomePage() {
       return
     }
 
-    const storedModel = window.localStorage.getItem(getModelStorageKey(configId))
+    const storedModel = provider ? window.localStorage.getItem(getModelStorageKey(provider)) : null
     setSelectedModel(storedModel ?? currentConfig?.model ?? '')
-  }, [translateConfig, selectedTranslateConfigId])
+  }, [translateConfig, selectedTranslateProvider])
 
   useEffect(() => {
     if (typeof window === 'undefined' || !translateConfig) {
       return
     }
 
-    const configId = selectedTranslateConfigId || translateConfig.defaultConfigId
-    if (!configId) {
+    const provider = selectedTranslateProvider || translateConfig.providers[0]?.provider || ''
+    if (!provider) {
       return
     }
 
-    window.localStorage.setItem(getModelStorageKey(configId), selectedModel)
-  }, [translateConfig, selectedTranslateConfigId, selectedModel])
+    window.localStorage.setItem(getModelStorageKey(provider), selectedModel)
+  }, [translateConfig, selectedTranslateProvider, selectedModel])
 
   useEffect(() => {
-    if (!translateConfig || !activeConfigId) {
+    if (!translateConfig || !activeProvider) {
       return
     }
 
-    void loadModels(activeConfigId)
-  }, [translateConfig, activeConfigId])
+    void loadModels(activeProvider)
+  }, [translateConfig, activeProvider])
 
   async function loadArticles(nextSelectedId?: string) {
     try {
@@ -207,7 +246,7 @@ export function HomePage() {
         await loadArticle(targetId)
       } else {
         setSelectedId(null)
-        setDetail(null)
+        applyDetail(null)
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : '加载文章失败'
@@ -219,7 +258,7 @@ export function HomePage() {
     try {
       const nextDetail = await api.getArticle(id)
       setSelectedId(id)
-      setDetail(nextDetail)
+      applyDetail(nextDetail)
       setError(null)
     } catch (err) {
       const message = err instanceof Error ? err.message : '加载文章详情失败'
@@ -237,14 +276,14 @@ export function HomePage() {
     }
   }
 
-  async function loadModels(configId = activeConfigId) {
-    if (!configId) {
+  async function loadModels(provider = activeProvider) {
+    if (!provider) {
       return
     }
 
     setLoadingModels(true)
     try {
-      const result = await api.getTranslateModels(configId)
+      const result = await api.getTranslateModels(provider)
       setAvailableModels(result.models)
       if (result.models.length > 0) {
         setSelectedModel((current) => {
@@ -253,7 +292,7 @@ export function HomePage() {
           }
 
           if (typeof window !== 'undefined') {
-            const storedModel = window.localStorage.getItem(getModelStorageKey(configId))
+            const storedModel = window.localStorage.getItem(getModelStorageKey(provider))
             if (storedModel && result.models.includes(storedModel)) {
               return storedModel
             }
@@ -268,6 +307,10 @@ export function HomePage() {
     } finally {
       setLoadingModels(false)
     }
+  }
+
+  function applyParsedArticle(parse: ParsedArticle) {
+    setParsedArticle(parse)
   }
 
   function getEditorPayload(): UpsertArticleInput | null {
@@ -285,12 +328,12 @@ export function HomePage() {
   }
 
   async function persistArticle(payload: UpsertArticleInput) {
-    const nextDetail = detail?.article
-      ? await api.updateArticle(detail.article.id, payload)
+    const nextDetail = currentArticle
+      ? await api.updateArticle(currentArticle.id, payload)
       : await api.createArticle(payload)
-    setDetail(nextDetail)
+    applyDetail(nextDetail)
     setSelectedId(nextDetail.article.id)
-    await loadArticles(nextDetail.article.id)
+    upsertArticleListItem(nextDetail.article.id, nextDetail.article.title)
     return nextDetail
   }
 
@@ -307,9 +350,9 @@ export function HomePage() {
 
       setArticles(remainingArticles)
       setSelectedId(nextSelectedId)
-      setDetail(null)
+      applyDetail(null)
       setSelection(null)
-      setTranslations(new Map())
+      setTranslateProgress(null)
 
       if (nextSelectedId) {
         await loadArticle(nextSelectedId)
@@ -331,69 +374,6 @@ export function HomePage() {
     }
   }
 
-  async function translateArticle(articleId: string, article: ParsedArticle) {
-    setTranslating(true)
-    const newTranslations = new Map<number, TranslateParagraphOutput>()
-    let currentMemory: TranslationMemory | Record<string, never> = {}
-    const activeConfig = translateConfig?.configs.find(
-      (item) => item.id === (selectedTranslateConfigId || translateConfig.defaultConfigId)
-    )
-
-    try {
-      for (let i = 0; i < article.paragraphs.length; i++) {
-        const paragraph = article.paragraphs[i]
-        const recentContext = getRecentContext(article, newTranslations, i)
-
-        console.log(`[Frontend] Translating paragraph ${i}...`)
-
-        const result = await api.translateParagraph({
-          currentParagraphIndex: i,
-          memory: currentMemory,
-          recentContext,
-          currentParagraph: {
-            sentences: paragraph.sentences.map((sentence, sentenceIndex) => ({
-              sentenceIndex,
-              text: sentence.originalText,
-            })),
-          },
-          configId: selectedTranslateConfigId || translateConfig?.defaultConfigId,
-          model: selectedModel || undefined,
-        })
-
-        console.log(`[Frontend] Paragraph ${i} translated successfully`)
-        newTranslations.set(i, result)
-        currentMemory = result.memory
-        setTranslations(new Map(newTranslations))
-      }
-
-      if (!activeConfig) {
-        throw new Error('翻译配置不存在')
-      }
-
-      const paragraphs = Array.from(newTranslations.entries())
-        .sort((left, right) => left[0] - right[0])
-        .map(([, value]) => value)
-
-      const savedDetail = await api.saveArticleTranslation(articleId, {
-        paragraphs,
-        memory: currentMemory as Record<string, unknown>,
-        provider: activeConfig.provider as TranslationModelProvider,
-        model: selectedModel,
-      })
-
-      setDetail(savedDetail)
-      setTranslations(getTranslationsFromDetail(savedDetail))
-      console.log('[Frontend] All paragraphs translated')
-    } catch (err) {
-      const message = err instanceof Error ? err.message : '翻译失败'
-      console.error(`[Frontend] Translation error: ${message}`)
-      setError({ message })
-      throw err
-    } finally {
-      setTranslating(false)
-    }
-  }
-
   async function handleParse() {
     const payload = getEditorPayload()
     if (!payload) return
@@ -404,11 +384,18 @@ export function HomePage() {
       setError(null)
       setStatus(null)
 
-      const saved = await persistArticle(payload)
-      const parsed = await api.parseStoredArticle(saved.article.id)
-      setDetail(parsed)
+      if (!currentArticle) {
+        const saved = await persistArticle(payload)
+        const parsed = await api.parseStoredArticle(saved.article.id)
+        applyParsedArticle(parsed.parse)
+        setStatus('文章已保存并完成解析。')
+        return
+      }
+
+      applyLocalArticleDraft(currentArticle.id, payload)
+      const parsed = await api.parseStoredArticle(currentArticle.id, payload)
+      applyParsedArticle(parsed.parse)
       setStatus('文章已保存并完成解析。')
-      await loadArticles(saved.article.id)
     } catch (err) {
       const message = err instanceof Error ? err.message : '解析失败'
       setError({ message })
@@ -421,58 +408,120 @@ export function HomePage() {
   async function handleTranslate() {
     const payload = getEditorPayload()
     if (!payload) return
+    if (!activeProvider) {
+      setError({ message: '请选择翻译 Provider。' })
+      return
+    }
 
     try {
       setSaving(true)
+      setTranslating(true)
+      setTranslateProgress(null)
       setError(null)
       setStatus(null)
       setTranslations(new Map())
+      const paragraphSentences: string[][] = []
 
-      const saved = await persistArticle(payload)
-      let article = saved.latestProcess?.parse ?? null
+      if (!currentArticle) {
+        const saved = await persistArticle(payload)
+        await api.translateArticle(
+          saved.article.id,
+          {
+            provider: activeProvider as 'deepseek' | 'llama',
+            model: selectedModel || undefined,
+          },
+          (event) => {
+            if (event.type === 'start') {
+              setParsedArticle(event.parse)
+              setTranslateProgress({
+                completed: 0,
+                total: event.totalParagraphs,
+              })
+              return
+            }
 
-      if (!article) {
-        const parsed = await api.parseStoredArticle(saved.article.id)
-        setDetail(parsed)
-        if (!parsed.latestProcess?.parse) {
-          throw new Error('解析结果为空')
-        }
-        article = parsed.latestProcess.parse
+            if (event.type === 'paragraph') {
+              paragraphSentences.push(event.sentences)
+              setTranslations(new Map(paragraphSentences.map((sentences, index) => [index, createStreamingTranslation(sentences)])))
+              setTranslateProgress((current) => current ? {
+                ...current,
+                completed: paragraphSentences.length,
+              } : current)
+              return
+            }
+
+            if (event.type === 'complete') {
+              setTranslateProgress((current) => current ? {
+                ...current,
+                completed: current.total,
+              } : current)
+              return
+            }
+
+            if (event.type === 'error') {
+              throw new Error(event.error)
+            }
+          }
+        )
+
+        setStatus('文章已完成翻译。')
+        return
       }
 
-      await translateArticle(saved.article.id, article)
+      applyLocalArticleDraft(currentArticle.id, payload)
+
+      await api.translateArticle(
+        currentArticle.id,
+        {
+          title: payload.title,
+          text: payload.text,
+          tags: payload.tags,
+          provider: activeProvider as 'deepseek' | 'llama',
+          model: selectedModel || undefined,
+        },
+        (event) => {
+          if (event.type === 'start') {
+            setParsedArticle(event.parse)
+            setTranslateProgress({
+              completed: 0,
+              total: event.totalParagraphs,
+            })
+            return
+          }
+
+          if (event.type === 'paragraph') {
+            paragraphSentences.push(event.sentences)
+            setTranslations(new Map(paragraphSentences.map((sentences, index) => [index, createStreamingTranslation(sentences)])))
+            setTranslateProgress((current) => current ? {
+              ...current,
+              completed: paragraphSentences.length,
+            } : current)
+            return
+          }
+
+          if (event.type === 'complete') {
+            setTranslateProgress((current) => current ? {
+              ...current,
+              completed: current.total,
+            } : current)
+            return
+          }
+
+          if (event.type === 'error') {
+            throw new Error(event.error)
+          }
+        }
+      )
+
       setStatus('文章已完成翻译。')
-      await loadArticles(saved.article.id)
     } catch (err) {
       const message = err instanceof Error ? err.message : '翻译失败'
       setError({ message })
     } finally {
       setSaving(false)
+      setTranslating(false)
+      setTranslateProgress(null)
     }
-  }
-
-  function getRecentContext(
-    article: ParsedArticle,
-    translations: TranslationState,
-    currentIndex: number
-  ): Array<{ paragraphIndex: number; originalText: string; translation: string }> {
-    const context: Array<{ paragraphIndex: number; originalText: string; translation: string }> = []
-
-    for (let i = Math.max(0, currentIndex - 2); i < currentIndex; i++) {
-      const translation = translations.get(i)
-      if (translation && article.paragraphs[i]) {
-        const paragraphTranslation = translation.sentences
-          .map((s) => s.translation)
-          .join("")
-        context.push({
-          paragraphIndex: i,
-          originalText: article.paragraphs[i].originalText,
-          translation: paragraphTranslation,
-        })
-      }
-    }
-    
-    return context
   }
 
   return (
@@ -528,7 +577,7 @@ export function HomePage() {
               type="button"
               onClick={() => {
                 setSelectedId(null)
-                setDetail(null)
+                applyDetail(null)
                 setEditor({
                   title: '',
                   text: '',
@@ -595,15 +644,15 @@ export function HomePage() {
             <div className="flex flex-col gap-1.5">
               <span className="text-xs font-bold uppercase tracking-[0.08em] text-primary/80">Provider</span>
               <Select
-                value={selectedTranslateConfigId || translateConfig.defaultConfigId}
-                onValueChange={setSelectedTranslateConfigId}
+                value={selectedTranslateProvider || translateConfig.providers[0]?.provider || ''}
+                onValueChange={setSelectedTranslateProvider}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="选择 Provider" />
                 </SelectTrigger>
                 <SelectContent>
-                  {translateConfig.configs.map((item) => (
-                    <SelectItem value={item.id} key={item.id}>
+                  {translateConfig.providers.map((item) => (
+                    <SelectItem value={item.provider} key={item.provider}>
                       {item.label} ({item.provider})
                     </SelectItem>
                   ))}
@@ -641,13 +690,14 @@ export function HomePage() {
       </aside>
       <section className="flex min-w-0 flex-1 flex-col gap-6">
         <ArticleComposer
-          article={detail?.article ?? null}
+          article={currentArticle}
           title={editor.title}
           text={editor.text}
           tags={editor.tags}
           saving={saving}
           parsing={parsing}
           translating={translating}
+          translateProgressText={translateProgress ? `翻译中 ${translateProgress.completed}/${translateProgress.total}` : null}
           errorMessage={error?.message ?? null}
           onParse={handleParse}
           onTranslate={handleTranslate}
@@ -656,8 +706,9 @@ export function HomePage() {
           onTagsChange={(value) => setEditor((current) => ({ ...current, tags: value }))}
         />
         <ArticleViewer
-          currentArticle={detail?.article ?? null}
-          article={detail?.latestProcess?.parse ?? null}
+          currentArticle={currentArticle}
+          article={parsedArticle}
+          hasProcessed={parsedArticle !== null || translations.size > 0}
           selection={selection}
           translations={translations}
           onSelectChunk={setSelection}

@@ -1,7 +1,7 @@
 import type { Client, InStatement } from "@libsql/client";
 import type { ParsedArticle } from "../lib/parser/index.ts";
 import type {
-  TranslateParagraphOutput,
+  StoredArticleTranslation,
   TranslationMemory,
   TranslationModelProvider,
 } from "../lib/translate/types.ts";
@@ -15,11 +15,6 @@ export type ArticleRecord = {
   latestProcessId: string | null;
   createdAt: string;
   updatedAt: string;
-};
-
-export type StoredArticleTranslation = {
-  paragraphs: TranslateParagraphOutput[];
-  memory: TranslationMemory | Record<string, never>;
 };
 
 export type ArticleProcessRecord = {
@@ -51,7 +46,7 @@ export type UpsertArticleInput = {
 };
 
 export type SaveArticleTranslationInput = {
-  paragraphs: TranslateParagraphOutput[];
+  paragraphs: StoredArticleTranslation["paragraphs"];
   memory: TranslationMemory | Record<string, never>;
   provider: TranslationModelProvider;
   model: string;
@@ -324,10 +319,6 @@ export async function saveArticleTranslation(
   const now = new Date().toISOString();
   const reusableProcess = await getReusableProcess(articleId, existing.article.text, db);
   const processId = reusableProcess?.id ?? crypto.randomUUID();
-  const translation = {
-    paragraphs: input.paragraphs,
-    memory: input.memory,
-  };
   const statements: InStatement[] = [];
 
   if (reusableProcess) {
@@ -335,7 +326,7 @@ export async function saveArticleTranslation(
       sql: `UPDATE article_processes
             SET translation_json = ?, provider = ?, model = ?, updated_at = ?
             WHERE id = ?`,
-      args: [JSON.stringify(translation), input.provider, input.model, now, processId],
+      args: [JSON.stringify({ paragraphs: input.paragraphs, memory: input.memory }), input.provider, input.model, now, processId],
     });
   } else {
     statements.push({
@@ -347,7 +338,7 @@ export async function saveArticleTranslation(
         articleId,
         existing.article.text,
         null,
-        JSON.stringify(translation),
+        JSON.stringify({ paragraphs: input.paragraphs, memory: input.memory }),
         input.provider,
         input.model,
         now,

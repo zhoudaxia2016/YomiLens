@@ -15,6 +15,7 @@ type ArticleComposerProps = {
   saving: boolean
   parsing: boolean
   translating: boolean
+  translateProgressText?: string | null
   errorMessage: string | null
   onParse: () => Promise<void>
   onTranslate: () => Promise<void>
@@ -31,6 +32,7 @@ export function ArticleComposer({
   saving,
   parsing,
   translating,
+  translateProgressText,
   errorMessage,
   onParse,
   onTranslate,
@@ -62,7 +64,7 @@ export function ArticleComposer({
             {parsing ? '解析中…' : '解析'}
           </Button>
           <Button className="py-1.5" type="button" onClick={() => void onTranslate()} disabled={saving || translating}>
-            {translating ? '翻译中…' : '翻译'}
+            {translating ? translateProgressText ?? '翻译中…' : '翻译'}
           </Button>
         </div>
       </CardHeader>

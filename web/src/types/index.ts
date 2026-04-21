@@ -95,7 +95,7 @@ export type ParsedArticle = {
 };
 
 export type ParseArticleResponse = {
-  article: ParsedArticle;
+  parse: ParsedArticle;
 };
 
 export type ParseArticleError = {
@@ -112,8 +112,12 @@ export type ArticleRecord = {
   updatedAt: string
 }
 
+export type StoredTranslatedParagraph = {
+  sentences: string[]
+}
+
 export type StoredArticleTranslation = {
-  paragraphs: TranslateParagraphOutput[]
+  paragraphs: StoredTranslatedParagraph[]
   memory: TranslationMemory | Record<string, never>
 }
 
@@ -164,7 +168,6 @@ export type TranslationSentence = {
 export type TranslationModelProvider = 'deepseek' | 'llama'
 
 export type TranslationModelConfig = {
-  id: string
   label: string
   provider: TranslationModelProvider
   baseUrl: string
@@ -173,45 +176,38 @@ export type TranslationModelConfig = {
 }
 
 export type TranslationModelConfigSummary = {
-  id: string
   label: string
   provider: TranslationModelProvider
   model: string
 }
 
-export type TranslateParagraphInput = {
-  currentParagraphIndex: number;
-  memory: TranslationMemory | Record<string, never>;
-  recentContext: Array<{
-    paragraphIndex: number;
-    originalText: string;
-    translation: string;
-  }>;
-  currentParagraph: {
-    sentences: TranslationSentence[];
-  };
-  configId?: string;
-  model?: string;
-};
-
-export type TranslateParagraphOutput = {
-  paragraphTranslation: string;
-  sentences: Array<{
-    sentenceIndex: number;
-    translation: string;
-    tokens: Array<{
-      index: number;
-      meaning: string;
-    }>;
-  }>;
-  memory: TranslationMemory;
-};
+export type TranslateArticleInput = {
+  provider: TranslationModelProvider
+  model?: string
+}
 
 export type TranslateParagraphError = {
   error: string;
 };
 
 export type TranslateConfigResponse = {
-  defaultConfigId: string
-  configs: TranslationModelConfigSummary[]
+  providers: TranslationModelConfigSummary[]
 }
+
+export type TranslateStreamEvent =
+  | {
+    type: 'start'
+    totalParagraphs: number
+    parse: ParsedArticle
+  }
+  | {
+    type: 'paragraph'
+    sentences: string[]
+  }
+  | {
+    type: 'complete'
+  }
+  | {
+    type: 'error'
+    error: string
+  }

@@ -1,3 +1,5 @@
+import type { ParsedArticle } from "../parser/types.ts";
+
 export type TranslationMemory = {
   summary: string
   characters: Array<{ name: string; description: string }>
@@ -13,7 +15,6 @@ export type TranslationSentence = {
 export type TranslationModelProvider = "deepseek" | "llama";
 
 export type TranslationModelConfig = {
-  id: string;
   label: string;
   provider: TranslationModelProvider;
   baseUrl: string;
@@ -22,7 +23,6 @@ export type TranslationModelConfig = {
 };
 
 export type TranslationModelConfigSummary = {
-  id: string;
   label: string;
   provider: TranslationModelProvider;
   model: string;
@@ -39,7 +39,11 @@ export type TranslateParagraphInput = {
   currentParagraph: {
     sentences: TranslationSentence[]
   }
-  configId?: string
+  model?: string
+}
+
+export type TranslateArticleInput = {
+  provider: TranslationModelProvider
   model?: string
 }
 
@@ -56,7 +60,33 @@ export type TranslateParagraphOutput = {
   memory: TranslationMemory
 }
 
-export type TranslateConfigResponse = {
-  defaultConfigId: string
-  configs: TranslationModelConfigSummary[]
+export type StoredTranslatedParagraph = {
+  sentences: string[]
 }
+
+export type StoredArticleTranslation = {
+  paragraphs: StoredTranslatedParagraph[]
+  memory: TranslationMemory | Record<string, never>
+}
+
+export type TranslateConfigResponse = {
+  providers: TranslationModelConfigSummary[]
+}
+
+export type TranslateStreamEvent =
+  | {
+    type: "start"
+    totalParagraphs: number
+    parse: ParsedArticle
+  }
+  | {
+    type: "paragraph"
+    sentences: string[]
+  }
+  | {
+    type: "complete"
+  }
+  | {
+    type: "error"
+    error: string
+  };

@@ -10,14 +10,14 @@ import {
 } from "../db/articlesRepo.ts";
 import { parseArticle } from "../lib/parser/index.ts";
 import type {
+  TranslateArticleInput,
+  StoredTranslatedParagraph,
+  TranslateStreamEvent,
   TranslateParagraphOutput,
   TranslationMemory,
-  TranslationModelProvider,
 } from "../lib/translate/types.ts";
-
-type ParseRequest = {
-  text: string;
-};
+import { resolveTranslationConfig } from "../lib/translate/config.ts";
+import { translateParagraph } from "../lib/translate/index.ts";
 
 type UpsertArticleRequest = {
   title?: string;
@@ -25,12 +25,34 @@ type UpsertArticleRequest = {
   tags?: string[];
 };
 
-type SaveTranslationRequest = {
-  paragraphs?: TranslateParagraphOutput[];
-  memory?: TranslationMemory | Record<string, never>;
-  provider?: TranslationModelProvider;
-  model?: string;
-};
+type TranslateRouteRequest = TranslateArticleInput & UpsertArticleRequest;
+
+function streamEvent(event: TranslateStreamEvent) {
+  return `${JSON.stringify(event)}\n`;
+}
+
+function getNormalizedArticleUpdate(
+  current: {
+    title: string;
+    text: string;
+    tags: string[];
+  },
+  payload: UpsertArticleRequest,
+) {
+  const hasTitle = typeof payload.title === "string";
+  const hasText = typeof payload.text === "string";
+  const hasTags = Array.isArray(payload.tags);
+
+  if (!hasTitle && !hasText && !hasTags) {
+    return null;
+  }
+
+  const title = hasTitle ? payload.title!.trim() || "未命名文章" : current.title;
+  const text = hasText ? payload.text!.trim() : current.text;
+  const tags = hasTags ? payload.tags! : current.tags;
+
+  return { title, text, tags };
+}
 
 export const articlesRouter = new Hono();
 
@@ -106,10 +128,31 @@ articlesRouter.delete("/:id", async (c) => {
 });
 
 articlesRouter.post("/:id/parse", async (c) => {
-  const detail = await getArticleDetail(c.req.param("id"));
+  let payload: UpsertArticleRequest = {};
+
+  try {
+    payload = await c.req.json<UpsertArticleRequest>();
+  } catch {
+    payload = {};
+  }
+
+  let detail = await getArticleDetail(c.req.param("id"));
 
   if (!detail) {
     return c.json({ error: "文章不存在" }, 404);
+  }
+
+  const nextArticle = getNormalizedArticleUpdate(detail.article, payload);
+  if (nextArticle) {
+    if (!nextArticle.text) {
+      return c.json({ error: "文章原文不能为空" }, 400);
+    }
+
+    const updated = await updateArticle(detail.article.id, nextArticle);
+    if (!updated) {
+      return c.json({ error: "文章不存在" }, 404);
+    }
+    detail = updated;
   }
 
   const text = detail.article.text.trim();
@@ -119,65 +162,159 @@ articlesRouter.post("/:id/parse", async (c) => {
 
   try {
     const article = await parseArticle(text);
-    const updatedDetail = await saveArticleParse(detail.article.id, article);
-
-    return c.json(updatedDetail);
+    await saveArticleParse(detail.article.id, article);
+    return c.json({ parse: article });
   } catch (error) {
     const message = error instanceof Error ? error.message : "解析失败";
     return c.json({ error: message }, 500);
   }
 });
 
-articlesRouter.post("/:id/translation", async (c) => {
-  let payload: SaveTranslationRequest;
+articlesRouter.post("/:id/translate", async (c) => {
+  let payload: TranslateRouteRequest;
 
   try {
-    payload = await c.req.json<SaveTranslationRequest>();
+    payload = await c.req.json<TranslateRouteRequest>();
   } catch {
     return c.json({ error: "请求体必须是合法 JSON" }, 400);
   }
 
-  if (!Array.isArray(payload.paragraphs)) {
-    return c.json({ error: "请提供翻译结果" }, 400);
-  }
-
-  if (!payload.provider || !payload.model?.trim()) {
-    return c.json({ error: "请提供 provider 和 model" }, 400);
-  }
-
-  const detail = await saveArticleTranslation(c.req.param("id"), {
-    paragraphs: payload.paragraphs,
-    memory: payload.memory ?? {},
-    provider: payload.provider,
-    model: payload.model.trim(),
-  });
-
+  let detail = await getArticleDetail(c.req.param("id"));
   if (!detail) {
     return c.json({ error: "文章不存在" }, 404);
   }
 
-  return c.json(detail);
-});
+  const nextArticle = getNormalizedArticleUpdate(detail.article, payload);
+  if (nextArticle) {
+    if (!nextArticle.text) {
+      return c.json({ error: "文章原文不能为空" }, 400);
+    }
 
-articlesRouter.post("/parse", async (c) => {
-  let payload: ParseRequest;
-
-  try {
-    payload = await c.req.json<ParseRequest>();
-  } catch {
-    return c.json({ error: "请求体必须是合法 JSON" }, 400);
+    const updated = await updateArticle(detail.article.id, nextArticle);
+    if (!updated) {
+      return c.json({ error: "文章不存在" }, 404);
+    }
+    detail = updated;
   }
 
-  const text = payload.text?.trim();
+  const text = detail.article.text.trim();
   if (!text) {
-    return c.json({ error: "请提供要解析的日语文章" }, 400);
+    return c.json({ error: "文章原文不能为空" }, 400);
+  }
+
+  if (!payload.provider) {
+    return c.json({ error: "请提供 provider" }, 400);
+  }
+
+  let parsedArticle = detail.latestProcess?.parse ?? null;
+  if (!parsedArticle) {
+    try {
+      parsedArticle = await parseArticle(text);
+      await saveArticleParse(detail.article.id, parsedArticle);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "解析失败";
+      return c.json({ error: message }, 500);
+    }
   }
 
   try {
-    const article = await parseArticle(text);
-    return c.json({ article });
+    const config = resolveTranslationConfig(payload.provider, payload.model);
+
+    if (!config.baseUrl) {
+      return c.json({ error: "请配置 Base URL" }, 400);
+    }
+
+    if (!config.model) {
+      return c.json({ error: "请提供模型名称" }, 400);
+    }
+
+    if (config.provider === "deepseek" && !config.apiKey) {
+      return c.json({ error: "DeepSeek 需要配置 API Key" }, 400);
+    }
+
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        const paragraphs = parsedArticle?.paragraphs ?? [];
+        const translatedParagraphs: TranslateParagraphOutput[] = [];
+        let currentMemory: TranslationMemory | Record<string, never> = {};
+
+        controller.enqueue(encoder.encode(streamEvent({
+          type: "start",
+          totalParagraphs: paragraphs.length,
+          parse: parsedArticle!,
+        })));
+
+        try {
+          for (let i = 0; i < paragraphs.length; i += 1) {
+            const paragraph = paragraphs[i];
+            const recentContext = translatedParagraphs
+              .slice(Math.max(0, translatedParagraphs.length - 2))
+              .map((item, offset) => {
+                const paragraphIndex = i - Math.min(2, translatedParagraphs.length) + offset;
+                return {
+                  paragraphIndex,
+                  originalText: paragraphs[paragraphIndex]?.originalText ?? "",
+                  translation: item.sentences.map((sentence) => sentence.translation).join(""),
+                };
+              });
+
+            const result = await translateParagraph({
+              currentParagraphIndex: i,
+              memory: currentMemory,
+              recentContext,
+              currentParagraph: {
+                sentences: paragraph.sentences.map((sentence, sentenceIndex) => ({
+                  sentenceIndex,
+                  text: sentence.originalText,
+                })),
+              },
+              model: config.model,
+            }, config);
+
+            translatedParagraphs.push(result);
+            currentMemory = result.memory;
+
+            controller.enqueue(encoder.encode(streamEvent({
+              type: "paragraph",
+              sentences: result.sentences.map((item) => item.translation),
+            })));
+          }
+
+          const storedParagraphs: StoredTranslatedParagraph[] = translatedParagraphs.map((item) => ({
+            sentences: item.sentences.map((sentence) => sentence.translation),
+          }));
+
+          await saveArticleTranslation(detail.article.id, {
+            paragraphs: storedParagraphs,
+            memory: currentMemory,
+            provider: payload.provider,
+            model: config.model,
+          });
+
+          controller.enqueue(encoder.encode(streamEvent({
+            type: "complete",
+          })));
+          controller.close();
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "翻译失败";
+          controller.enqueue(encoder.encode(streamEvent({
+            type: "error",
+            error: message,
+          })));
+          controller.close();
+        }
+      },
+    });
+
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "application/x-ndjson; charset=utf-8",
+        "Cache-Control": "no-cache",
+      },
+    });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "解析失败";
+    const message = error instanceof Error ? error.message : "翻译失败";
     return c.json({ error: message }, 500);
   }
 });

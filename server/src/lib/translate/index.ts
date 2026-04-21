@@ -137,7 +137,7 @@ ${termsText}`;
     const terms = parseTerms(termsBlock);
 
     const result: TranslateParagraphOutput = {
-      paragraphTranslation: "",
+      paragraphTranslation: sentenceTexts.join(""),
       sentences: sentenceTexts.map((text, index) => ({
         sentenceIndex: index,
         translation: text,

@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
-import type { ArticleRecord, ParsedArticle, TranslateParagraphOutput } from '@/types'
+import type { ArticleRecord, ParsedArticle, StoredTranslatedParagraph } from '@/types'
 import { ChunkPopover } from './chunk-popover'
 import { TokenSurface } from './token-surface'
 import {
@@ -17,14 +17,16 @@ import {
 type ArticleViewerProps = {
   currentArticle: ArticleRecord | null
   article: ParsedArticle | null
+  hasProcessed: boolean
   selection: SelectionState
-  translations: Map<number, TranslateParagraphOutput>
+  translations: Map<number, StoredTranslatedParagraph>
   onSelectChunk: (payload: SelectionState) => void
 }
 
 export function ArticleViewer({ 
   currentArticle,
   article, 
+  hasProcessed,
   selection, 
   translations, 
   onSelectChunk,
@@ -56,7 +58,7 @@ export function ArticleViewer({
   }, [selection, onSelectChunk])
 
   const statusLabel = currentArticle
-    ? currentArticle.latestProcessId
+    ? hasProcessed
       ? '已处理'
       : '待解析'
     : null
@@ -111,9 +113,7 @@ export function ArticleViewer({
                 key={`${paragraph.originalText}-${paragraphIndex}`}
               >
                 {paragraph.sentences.map((sentence, sentenceIndex) => {
-                  const sentenceTranslation = translation?.sentences.find(
-                    (s) => s.sentenceIndex === sentenceIndex
-                  )
+                  const sentenceTranslation = translation?.sentences[sentenceIndex] ?? null
                   
                   return (
                     <section className="mt-5 first:mt-0" key={`${sentence.originalText}-${sentenceIndex}`}>
@@ -185,7 +185,6 @@ export function ArticleViewer({
                                     sentence={sentence}
                                     token={selectedContext.token}
                                     activeTokenIndex={selection.activeTokenIndex}
-                                    tokenMeanings={sentenceTranslation?.tokens}
                                     onSelectToken={(tokenIndex) =>
                                       onSelectChunk({
                                         paragraphIndex,
@@ -201,9 +200,9 @@ export function ArticleViewer({
                           )
                         })}
                       </div>
-                      {sentenceTranslation?.translation ? (
+                      {sentenceTranslation ? (
                         <p className="mt-3 pl-1 text-base leading-7 text-muted-foreground">
-                          {sentenceTranslation.translation}
+                          {sentenceTranslation}
                         </p>
                       ) : null}
                     </section>

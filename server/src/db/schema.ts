@@ -296,10 +296,87 @@ ON article_processes (article_id, updated_at DESC)`,
   await client.batch(cleanupStatements, "write");
 }
 
+function normalizeStoredTranslationJson(raw: string): string | null {
+  try {
+    const parsed = JSON.parse(raw) as {
+      paragraphs?: Array<{ sentences?: unknown[] }>
+      memory?: unknown
+    };
+
+    if (!Array.isArray(parsed.paragraphs)) {
+      return null;
+    }
+
+    let changed = false;
+    const paragraphs = parsed.paragraphs.map((paragraph) => {
+      const sentenceValues = Array.isArray(paragraph?.sentences) ? paragraph.sentences : [];
+      const normalizedSentences = sentenceValues
+        .map((item) => {
+          if (typeof item === "string") {
+            return item;
+          }
+
+          if (item && typeof item === "object" && "translation" in item) {
+            changed = true;
+            const translation = (item as { translation?: unknown }).translation;
+            return typeof translation === "string" ? translation : "";
+          }
+
+          changed = true;
+          return "";
+        })
+        .filter(Boolean);
+
+      if (normalizedSentences.length !== sentenceValues.length) {
+        changed = true;
+      }
+
+      return {
+        sentences: normalizedSentences,
+      };
+    });
+
+    const normalized = {
+      paragraphs,
+      memory: parsed.memory && typeof parsed.memory === "object" ? parsed.memory : {},
+    };
+
+    const nextRaw = JSON.stringify(normalized);
+    return changed || nextRaw !== raw ? nextRaw : null;
+  } catch {
+    return null;
+  }
+}
+
+async function migrateStoredTranslationShape(): Promise<void> {
+  const client = getDbClient();
+  const res = await client.execute({
+    sql: `SELECT id, translation_json FROM article_processes WHERE translation_json IS NOT NULL`,
+    args: [],
+  });
+
+  for (const row of res.rows) {
+    const record = row as Record<string, unknown>;
+    const id = String(record.id);
+    const translationJson = String(record.translation_json ?? "");
+    const nextJson = normalizeStoredTranslationJson(translationJson);
+
+    if (!nextJson) {
+      continue;
+    }
+
+    await client.execute({
+      sql: `UPDATE article_processes SET translation_json = ? WHERE id = ?`,
+      args: [nextJson, id],
+    });
+  }
+}
+
 export async function initDb(): Promise<void> {
   await Deno.mkdir(new URL("../../data/", import.meta.url), { recursive: true }).catch(() => {});
   await createLatestSchema();
   await migrateToProcessSchema();
   await repairArticleProcessesForeignKey();
+  await migrateStoredTranslationShape();
   await createLatestSchema();
 }
