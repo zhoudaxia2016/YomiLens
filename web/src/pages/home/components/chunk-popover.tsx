@@ -75,16 +75,13 @@ export function ChunkPopover({
             {currentTokenMeaning}
           </p>
         ) : null}
-        <dl className="grid gap-3 sm:grid-cols-2">
-          <div className="rounded-2xl border border-panel-border bg-background/75 px-4 py-3">
-            <dt className="text-xs font-bold uppercase tracking-[0.08em] text-primary/80">原形</dt>
-            <dd className="mt-1 text-sm leading-6 text-foreground">{token.lemma}</dd>
-          </div>
-          <div className="rounded-2xl border border-panel-border bg-background/75 px-4 py-3">
-            <dt className="text-xs font-bold uppercase tracking-[0.08em] text-primary/80">句子成分</dt>
-            <dd className="mt-1 text-sm leading-6 text-foreground">{CHUNK_ROLE_LABEL[chunk.roleHint]}</dd>
-          </div>
-        </dl>
+        <div className="flex items-center gap-2 text-sm">
+          <span className="text-muted-foreground/70">原形</span>
+          <span className="font-medium text-foreground">{token.lemma}</span>
+          <span className="mx-1 text-border">·</span>
+          <span className="text-muted-foreground/70">句子成分</span>
+          <span className="font-medium text-foreground">{CHUNK_ROLE_LABEL[chunk.roleHint]}</span>
+        </div>
         {token.conjugation ? (
           <div className="rounded-2xl bg-brand-soft px-4 py-3">
             <p className="m-0 text-xs font-bold uppercase tracking-[0.08em] text-primary/80">活用信息</p>
